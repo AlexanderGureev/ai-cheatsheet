@@ -1,0 +1,29 @@
+# OS and editors
+.DS_Store
+._*
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log
+.claude/settings.local.json
+
+# Dependencies and caches
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.cache/
+
+# Generated site and browser reports
+/_site/
+/dist/
+/playwright-report/
+/test-results/
