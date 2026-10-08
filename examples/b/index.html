@@ -1,0 +1,1924 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Синтез — линия генерации видео и изображений</title>
+<meta name="description" content="Seedance 2.5, Kling 3.0, Seedream 5.0 и Kling Image 3.0 на одной линии. Цена каждой генерации в рублях — до запуска. Российское юрлицо, договор, оплата по счёту.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Geologica (ось SHRP) + IBM Plex Mono. Второй запрос добирает стрелки и галочку, которых нет в стандартных сабсетах: без фолбэка. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geologica:wght,SHRP@300..800,0..100&family=IBM+Plex+Mono:wght@400;500;600&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geologica:wght,SHRP@300..800,0..100&family=IBM+Plex+Mono:wght@400;500;600&text=%E2%86%92%E2%86%90%E2%86%91%E2%86%97%E2%9C%93&display=block">
+<style>
+/* =====================================================================
+   ТОКЕНЫ. Один акцент #FF4D00 — только деньги и энергия.
+   1rem = 10 «чертёжных» px листа 1440×900; лист масштабируется целиком.
+   ===================================================================== */
+:root{
+  --paper:#EEECE7; --paper-hi:#F6F5F1; --paper-lo:#E3E1DB; --paper-tk:#FBFAF6;
+  --ink:#141414; --ink-2:#3B3A37; --mute:#66645D; --mute-2:#8A877F;
+  --hair:rgba(20,20,20,.12); --hair-2:rgba(20,20,20,.06); --hair-3:rgba(20,20,20,.2);
+  --acc:#FF4D00; --acc-lo:#B83700;
+  --lcd:#171716; --lcd-2:#232321; --lcd-ink:#E9E6DE; --lcd-dim:rgba(233,230,222,.56);
+  --sans:'Geologica', sans-serif; --mono:'IBM Plex Mono', monospace;
+  --s: max(0.74px, min(calc(100vw / 1440), calc(100vh / 900)));
+  --gut:1.6rem; --pad:3.6rem;
+  --mod-shadow: inset 0 .1rem 0 rgba(255,255,255,.9), inset 0 -.1rem 0 rgba(20,20,20,.05), 0 .1rem .2rem rgba(20,20,20,.08), 0 1.4rem 2rem -1.2rem rgba(20,20,20,.34);
+  --tick:120ms;
+}
+html{font-size:calc(10 * var(--s));background:var(--paper)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:1.5rem;line-height:1.4;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-kerning:normal}
+a{color:inherit}
+button,input,textarea{font:inherit;color:inherit}
+p,h1,h2,h3,figure{margin:0}
+.mono{font-family:var(--mono)}
+.num,.od{font-variant-numeric:tabular-nums}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+:focus{outline:none}
+:focus-visible{outline:.2rem solid var(--ink);outline-offset:.2rem}
+.g12{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gut)}
+
+/* ---------- Лист ---------- */
+.sheet{position:relative;height:max(100vh, calc(900 * var(--s)));padding:0 var(--pad);display:flex;flex-direction:column;overflow:hidden;isolation:isolate}
+.cols{position:absolute;left:var(--pad);right:var(--pad);top:0;height:0;visibility:hidden}
+.drawing{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:visible}
+.drawing line{stroke:rgba(20,20,20,.075);stroke-width:1;vector-effect:non-scaling-stroke;transform-box:fill-box}
+.drawing .h{stroke:rgba(20,20,20,.14);transform-origin:left center;transform:scaleX(clamp(0, calc((var(--draw,1) - var(--i,0)) * 2.4), 1))}
+.drawing .v{transform-origin:center top;transform:scaleY(clamp(0, calc((var(--draw,1) - var(--i,0)) * 2.4), 1))}
+.drawing .tk-maj{stroke:rgba(20,20,20,.38)}
+.drawing .tk-min{stroke:rgba(20,20,20,.2)}
+.drawing .crop{stroke:var(--ink);stroke-width:1}
+.drawing text{font-family:var(--mono);font-size:calc(8 * var(--s));fill:var(--mute-2);letter-spacing:.04em}
+
+/* ---------- Навигация ---------- */
+.nav{position:relative;z-index:6;height:5.2rem;align-items:center}
+.logo{grid-column:1/3;display:inline-flex;align-items:center;gap:.9rem;text-decoration:none;font-weight:700;font-size:2rem;letter-spacing:-.03em;font-variation-settings:"SHRP" 100}
+.logo svg{width:2.2rem;height:2.2rem;display:block}
+.nav-links{grid-column:4/9;display:flex;gap:2.8rem;font-size:1.4rem;font-weight:450}
+.nav-links a,.nav-in{text-decoration:none;position:relative}
+.nav-links a::after,.nav-in::after{content:"";position:absolute;left:0;right:0;bottom:-.4rem;height:1px;background:var(--ink);transform:scaleX(0);transform-origin:left;transition:transform var(--tick) steps(3)}
+.nav-links a:hover::after,.nav-in:hover::after{transform:scaleX(1)}
+.nav-act{grid-column:9/13;justify-self:end;display:flex;align-items:center;gap:2.2rem;font-size:1.4rem}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:1rem;height:4.8rem;padding:0 2.2rem;border:0;border-radius:.3rem;font:600 1.5rem/1 var(--sans);letter-spacing:-.005em;text-decoration:none;cursor:pointer;white-space:nowrap;position:relative;transform:translateY(0);transition:transform 60ms steps(1)}
+.btn svg{width:1.4rem;height:1.4rem;flex:none}
+.btn-acc{background:var(--acc);color:var(--ink);box-shadow:0 .3rem 0 var(--acc-lo),0 .5rem 1rem -.2rem rgba(20,20,20,.28)}
+.btn-acc:active{transform:translateY(.3rem);box-shadow:0 0 0 var(--acc-lo),0 .1rem .2rem rgba(20,20,20,.2)}
+.btn-ink{background:var(--ink);color:var(--paper);box-shadow:0 .3rem 0 #000,0 .5rem 1rem -.2rem rgba(20,20,20,.25)}
+.btn-ink:active{transform:translateY(.3rem);box-shadow:0 0 0 #000}
+.btn-line{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.btn-line:hover{background:rgba(20,20,20,.04)}
+.btn-sm{height:3.4rem;padding:0 1.5rem;font-size:1.35rem}
+
+/* ---------- Координатная линейка ---------- */
+.ruler{height:2rem;align-items:end;font:500 .9rem/1 var(--mono);color:var(--mute-2);letter-spacing:.06em;position:relative;z-index:1}
+.ruler span{padding:0 0 .5rem .3rem}
+
+/* ---------- Верхняя половина ---------- */
+main{flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr) auto;position:relative;z-index:2}
+.hero-copy{grid-column:1/9;grid-row:1;position:relative;z-index:3;padding-top:2rem}
+.eyebrow{display:flex;align-items:center;gap:1rem;font:500 1.1rem/1 var(--mono);letter-spacing:.08em;color:var(--ink-2)}
+.eyebrow i{display:inline-block;width:.7rem;height:.7rem;background:var(--ink)}
+h1{margin-top:1.3rem;font-weight:640;font-size:7rem;line-height:.98;letter-spacing:-.045em;font-variation-settings:"SHRP" 100}
+.h1-line{display:block;overflow:hidden;padding:0 0 .06em;margin-bottom:-.06em}
+.h1-in{display:block;will-change:transform;white-space:nowrap}
+.h1-tag{display:inline-block;vertical-align:top;font:500 1rem/1 var(--mono);letter-spacing:.06em;color:var(--ink-2);border:1px solid var(--hair-3);padding:.35rem .45rem .3rem;margin:.9rem 1.4rem 0 0;font-variation-settings:normal;white-space:nowrap}
+.sub{margin-top:1.6rem;max-width:72rem;font-size:1.55rem;line-height:1.5;color:var(--ink-2);font-weight:400}
+.cta{margin-top:2.2rem;display:flex;align-items:center;gap:1.2rem}
+.cta-note{margin-left:1rem;font-size:1.2rem;line-height:1.35;color:var(--mute);max-width:24rem}
+.cta-note b{color:var(--ink);font-weight:600}
+
+/* ---------- Панель прибора ---------- */
+.panel{grid-column:10/13;grid-row:1;align-self:start;margin-top:2rem;z-index:3;position:relative;background:var(--paper-hi);border:1px solid var(--hair-3);border-radius:.4rem;box-shadow:var(--mod-shadow);padding:1.2rem 1.4rem 1.3rem;display:flex;flex-direction:column;gap:1.1rem}
+.p-top{display:flex;justify-content:space-between;align-items:center;font:500 .95rem/1 var(--mono);letter-spacing:.08em;color:var(--mute)}
+.snd{display:inline-flex;align-items:center;gap:.6rem;background:none;border:1px solid var(--hair-3);border-radius:.2rem;padding:.45rem .6rem;cursor:pointer;font:500 .9rem/1 var(--mono);letter-spacing:.08em;color:var(--ink-2)}
+.snd .led{width:.6rem;height:.6rem}
+.p-lbl{display:block;font:500 .9rem/1 var(--mono);letter-spacing:.1em;color:var(--mute);margin-bottom:.6rem}
+.mode{position:relative;border:0;margin:0;padding:.3rem;display:grid;grid-template-columns:1fr 1fr;background:var(--paper-lo);border-radius:.3rem;box-shadow:inset 0 .1rem .2rem rgba(20,20,20,.14)}
+.mode legend{padding:0}
+.mode label{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;height:3.4rem;font-size:1.35rem;font-weight:550;cursor:pointer;color:var(--ink-2);transition:color var(--tick) steps(1)}
+.mode input{position:absolute;opacity:0;pointer-events:none}
+.mode input:checked + span{color:var(--paper)}
+.mode input:focus-visible + span{outline:.2rem solid var(--ink);outline-offset:.4rem}
+.mode-thumb{position:absolute;z-index:0;top:.3rem;left:.3rem;width:calc(50% - .3rem);height:3.4rem;background:var(--ink);border-radius:.2rem;box-shadow:0 .2rem 0 #000;transition:transform 240ms cubic-bezier(.3,1.6,.5,1)}
+.is-dev .mode-thumb{transform:translateX(100%)}
+.credits{display:flex;align-items:flex-end;gap:1rem}
+.od-xl{font:500 4.4rem/1 var(--mono);letter-spacing:-.04em}
+.credits-u{font-size:1.3rem;line-height:1.2;color:var(--ink-2);padding-bottom:.4rem}
+.p-sep{height:1px;background:var(--hair)}
+.p-status{display:flex;align-items:center;gap:.8rem;font:500 1.05rem/1.2 var(--mono);letter-spacing:.06em}
+.p-legal{font:500 .95rem/1.3 var(--mono);letter-spacing:.06em;color:var(--mute)}
+
+/* LED */
+.led{display:inline-block;width:.8rem;height:.8rem;border-radius:50%;background:#C9C6BE;box-shadow:inset 0 .1rem .1rem rgba(20,20,20,.35),0 .1rem 0 rgba(255,255,255,.8);flex:none}
+.led.on,.led[data-s="run"],.led[data-s="cal"]{background:var(--acc);box-shadow:inset 0 -.1rem .1rem rgba(120,30,0,.5),inset 0 .1rem .1rem rgba(255,210,180,.8)}
+.led[data-s="idle"]{background:#3A3936}
+.led[data-s="done"]{background:var(--ink)}
+
+/* ---------- Линия ---------- */
+.line{grid-column:1/13;grid-row:2;height:41.4rem;position:relative;z-index:2;display:flex;flex-direction:column}
+.line-head{height:2.6rem;align-items:center;font:500 .95rem/1 var(--mono);letter-spacing:.08em;color:var(--ink-2)}
+.dim{position:relative;display:flex;align-items:center;justify-content:center;height:1.2rem;white-space:nowrap}
+.dim::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--hair-3)}
+.dim::after{content:"";position:absolute;inset:0;border-left:1px solid var(--ink-2);border-right:1px solid var(--ink-2)}
+.dim span{position:relative;background:var(--paper);padding:0 .8rem}
+.dim b{font-weight:600;color:var(--ink)}
+.lh-in{grid-column:1/4}.lh-out{grid-column:10/13}
+.lh-gates{grid-column:4/10;display:grid;grid-template-columns:repeat(2,1fr) .8rem repeat(2,1fr);column-gap:1.2rem}
+.lh-gates .dim-v{grid-column:1/3}.lh-gates .dim-i{grid-column:4/6}
+.line-body{position:relative;flex:none;grid-template-rows:28rem 8.4rem;row-gap:.8rem;transform-origin:50% 100%}
+.line-foot{height:1.6rem;align-items:center;font:500 .85rem/1 var(--mono);letter-spacing:.08em;color:var(--mute)}
+.lf-a{grid-column:1/4;padding-left:6.4rem;color:var(--ink-2)}.lf-m{grid-column:4/9}.lf-b{grid-column:10/13;text-align:right}
+
+/* Модуль (физический) */
+.mod{position:relative;background:var(--paper-hi);border:1px solid var(--hair-3);border-radius:.4rem;box-shadow:var(--mod-shadow)}
+
+/* 01 ВХОД — станция с переворотом в режим разработчика */
+.st-in{grid-column:1/4;grid-row:1;position:relative;z-index:3;perspective:140rem}
+.flip{position:relative;width:100%;height:100%;transform-style:preserve-3d;will-change:transform}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.face-back{transform:rotateX(180deg)}
+.composer{padding:1.1rem 1.2rem 1rem;display:flex;flex-direction:column;gap:.8rem;margin:0}
+.c-head{display:flex;justify-content:space-between;align-items:center;font:500 .95rem/1 var(--mono);letter-spacing:.08em;color:var(--ink-2);height:1.6rem}
+.c-head b{font-weight:600;color:var(--ink)}
+.c-mode{border:1px solid var(--hair-3);padding:.3rem .5rem;border-radius:.2rem}
+.c-io{display:grid;grid-template-columns:1fr 6rem;gap:.8rem;height:7.2rem}
+.c-prompt{position:relative;display:block;background:#fff;border:1px solid var(--hair-3);border-radius:.25rem;box-shadow:inset 0 .1rem .2rem rgba(20,20,20,.08);padding:.55rem .7rem 0}
+.c-lbl{display:block;font:500 .8rem/1 var(--mono);letter-spacing:.1em;color:var(--mute)}
+.c-prompt textarea:focus-visible{outline:none}
+.c-prompt textarea{display:block;width:100%;height:5.3rem;margin-top:.35rem;border:0;padding:0;background:transparent;resize:none;font:400 1.3rem/1.32 var(--sans);color:var(--ink);overflow:hidden}
+.c-prompt:focus-within{box-shadow:inset 0 .1rem .2rem rgba(20,20,20,.08),0 0 0 .15rem var(--ink)}
+.c-ref{position:relative;border:1px dashed rgba(20,20,20,.35);border-radius:.25rem;overflow:hidden;background:var(--paper)}
+.c-ref-btn{position:absolute;inset:0;width:100%;height:100%;background:none;border:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;font:500 .8rem/1.2 var(--mono);letter-spacing:.08em;color:var(--mute)}
+.c-ref-btn svg{width:1.4rem;height:1.4rem}
+.c-ref-img{position:absolute;inset:0;opacity:0;will-change:transform}
+.c-ref-img img{width:100%;height:100%;object-fit:cover;display:block}
+.c-ref-img span{position:absolute;left:.3rem;bottom:.3rem;font:500 .7rem/1 var(--mono);letter-spacing:.06em;background:var(--ink);color:var(--paper);padding:.2rem .3rem}
+.c-ref.has .c-ref-img{opacity:1}
+.c-ref.has .c-ref-btn{opacity:0}
+.c-ref-x{position:absolute;right:.2rem;top:.2rem;z-index:2;width:1.8rem;height:1.8rem;border:0;border-radius:.2rem;background:var(--ink);color:var(--paper);font:600 1.1rem/1 var(--mono);cursor:pointer;display:none}
+.c-ref.has.user .c-ref-x{display:block}
+.c-ref.off{opacity:.4}
+.c-ref.off .c-ref-btn{cursor:not-allowed}
+.c-models{border:0;margin:0;padding:0;display:grid;grid-template-columns:4.6rem 1fr 1fr;gap:.5rem .5rem;align-items:center}
+.c-models legend{padding:0}
+.c-grp-l{font:500 .8rem/1 var(--mono);letter-spacing:.08em;color:var(--mute)}
+.key{position:relative;display:block;cursor:pointer}
+.key input{position:absolute;opacity:0;pointer-events:none}
+.key span{display:flex;align-items:center;height:2.3rem;padding:0 .7rem;background:var(--paper-hi);border:1px solid var(--hair-3);border-radius:.25rem;font-size:1.2rem;font-weight:520;letter-spacing:-.01em;white-space:nowrap;box-shadow:0 .2rem 0 rgba(20,20,20,.18);transform:translateY(0);transition:transform 60ms steps(1)}
+.key input:checked + span{background:var(--ink);color:var(--paper);border-color:var(--ink);box-shadow:0 .2rem 0 #000}
+.key input:focus-visible + span{outline:.2rem solid var(--ink);outline-offset:.2rem}
+.key.down span,.key:active span{transform:translateY(.2rem);box-shadow:0 0 0 rgba(20,20,20,.18)}
+.c-params{display:flex;gap:.8rem;height:2.4rem}
+.seg{border:0;margin:0;padding:0;display:flex;border:1px solid var(--hair-3);border-radius:.25rem;overflow:hidden;background:var(--paper-hi)}
+.seg legend{float:left;display:flex;align-items:center;height:100%;padding:0 .6rem;font:500 .8rem/1 var(--mono);letter-spacing:.08em;color:var(--mute);border-right:1px solid var(--hair)}
+.seg label{position:relative;display:block;cursor:pointer}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label span{display:flex;align-items:center;justify-content:center;height:100%;min-width:2.9rem;padding:0 .55rem;font:500 1.05rem/1 var(--mono);border-left:1px solid var(--hair);transform:translateY(0)}
+.seg label:first-of-type span{border-left:0}
+.seg input:checked + span{background:var(--ink);color:var(--paper)}
+.seg input:focus-visible + span{outline:.2rem solid var(--acc);outline-offset:-.2rem}
+.seg label.down span{transform:translateY(.15rem)}
+.c-params[data-kind="image"] .p-video,.c-params[data-kind="video"] .p-image{display:none}
+.launch{position:relative;display:block;width:100%;height:4.4rem;margin-top:auto;padding:0;border:0;background:transparent;cursor:pointer}
+.launch-base{position:absolute;inset:.4rem 0 0;background:var(--acc-lo);border-radius:.35rem}
+.launch-cap{position:absolute;left:0;right:0;top:0;height:4rem;display:flex;align-items:center;justify-content:space-between;padding:0 1.2rem 0 1.4rem;background:var(--acc);color:var(--ink);border-radius:.35rem;box-shadow:inset 0 .1rem 0 rgba(255,200,170,.7);transform:translateY(0);will-change:transform}
+.launch.down .launch-cap,.launch:active .launch-cap{transform:translateY(.4rem)}
+.launch-l{font:650 1.45rem/1 var(--sans);letter-spacing:.06em}
+.launch-p{display:flex;align-items:center;gap:1rem;height:100%}
+.launch-p::before{content:"";width:1px;height:2.2rem;background:rgba(20,20,20,.35)}
+.launch-od{font:600 2rem/1 var(--mono);letter-spacing:-.02em;min-width:7.4rem;text-align:right}
+.launch:focus-visible{outline:none}
+.launch:focus-visible .launch-cap{outline:.2rem solid var(--ink);outline-offset:.2rem}
+.c-formula{font:500 .95rem/1.2 var(--mono);letter-spacing:.03em;color:var(--ink-2);display:flex;justify-content:space-between;gap:.6rem;white-space:nowrap;margin-top:-.2rem}
+.c-formula span:first-child{color:var(--mute)}
+
+/* Обратная сторона: режим разработчика */
+.dev{background:var(--lcd);border-color:#000;color:var(--lcd-ink);padding:1.1rem 1.2rem 1rem;display:flex;flex-direction:column;gap:.8rem;box-shadow:inset 0 .1rem 0 rgba(255,255,255,.08),0 1.4rem 2rem -1.2rem rgba(20,20,20,.5)}
+.d-head{display:flex;align-items:center;justify-content:space-between;font:500 .95rem/1 var(--mono);letter-spacing:.08em;color:var(--lcd-dim);height:1.6rem}
+.d-head b{color:var(--lcd-ink);font-weight:600}
+.d-copy{background:var(--lcd-2);border:1px solid rgba(233,230,222,.25);color:var(--lcd-ink);border-radius:.2rem;padding:.35rem .6rem;font:500 .9rem/1 var(--mono);letter-spacing:.08em;cursor:pointer}
+.d-copy:focus-visible{outline:.2rem solid var(--acc)}
+.d-code{flex:1;margin:0;font:400 1.03rem/1.66 var(--mono);color:var(--lcd-ink);white-space:pre;overflow:hidden}
+.t-c{color:rgba(233,230,222,.42)}
+.t-k{color:rgba(233,230,222,.62)}
+.t-f{color:var(--lcd-ink);font-weight:600}
+.t-s{color:#D9D3C4}
+.t-n{color:#F2EEE6}
+.t-m{display:inline-block;min-width:17ch;background:rgba(233,230,222,.12);box-shadow:0 0 0 .2rem rgba(233,230,222,.12);color:#fff}
+.t-m i{font-style:normal;display:inline-block}
+.t-cost{color:var(--acc);font-weight:600}
+.d-foot{font:500 .9rem/1.3 var(--mono);letter-spacing:.04em;color:var(--lcd-dim);border-top:1px solid rgba(233,230,222,.14);padding-top:.7rem;display:flex;justify-content:space-between}
+.d-foot b{color:var(--acc);font-weight:500}
+
+/* 02 ШЛЮЗЫ */
+.gates{grid-column:4/10;grid-row:1;position:relative;z-index:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) .8rem repeat(2,minmax(0,1fr));column-gap:1.2rem}
+.gate{display:flex;flex-direction:column;padding:.9rem .9rem .8rem;min-width:0;transform:translateY(0);transition:transform 120ms cubic-bezier(.3,1.8,.5,1)}
+.gate::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:0 2.2rem 2.6rem -1.6rem rgba(20,20,20,.45);opacity:0;transition:opacity 120ms steps(2)}
+.gate.is-run{transform:translateY(-.4rem)}
+.gate.is-run .g-win{box-shadow:inset 0 0 0 1px #000,0 0 0 .3rem var(--paper-lo),0 0 0 calc(.3rem + 1.5px) var(--acc)}
+.gate.is-run::after{opacity:1}
+.gate:nth-child(3){grid-column:4}
+.g-top{display:flex;align-items:center;justify-content:space-between;font:500 .9rem/1 var(--mono);letter-spacing:.08em;color:var(--mute);height:1.2rem}
+.g-top b{color:var(--ink);font-weight:600;margin-right:.6rem}
+.g-top .r{display:flex;align-items:center;gap:.6rem}
+.g-name{position:relative;height:2.2rem;margin-top:.5rem;overflow:hidden;font-size:1.65rem;font-weight:620;letter-spacing:-.025em;line-height:2.2rem;font-variation-settings:"SHRP" 100}
+.g-name span{display:block;white-space:nowrap;transition:transform 240ms cubic-bezier(.3,1.5,.5,1),opacity var(--tick) steps(2)}
+.g-name .d{position:absolute;left:0;top:0;font:500 1.3rem/2.2rem var(--mono);letter-spacing:-.01em;transform:translateY(100%);opacity:0}
+.is-dev .g-name .h{transform:translateY(-100%);opacity:0}
+.is-dev .g-name .d{transform:translateY(0);opacity:1}
+.g-price{font:500 1rem/1.3 var(--mono);letter-spacing:.04em;color:var(--ink-2);display:flex;justify-content:space-between;white-space:nowrap}
+.g-price b{font-weight:600;color:var(--ink);box-shadow:inset 0 -.2rem 0 var(--acc)}
+.g-cap{font:500 .8rem/1.3 var(--mono);letter-spacing:.05em;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-win{position:relative;flex:1;min-height:0;margin-top:.7rem;background:var(--lcd);border-radius:.2rem;overflow:hidden;box-shadow:inset 0 0 0 1px #000,0 0 0 .3rem var(--paper-lo),0 0 0 calc(.3rem + 1px) var(--hair-3)}
+.g-standby{position:absolute;inset:0;color:var(--lcd-dim)}
+.g-standby::before,.g-standby::after{content:"";position:absolute;background:rgba(233,230,222,.1)}
+.g-standby::before{left:50%;top:0;bottom:0;width:1px}
+.g-standby::after{top:50%;left:0;right:0;height:1px}
+.g-standby i{position:absolute;width:1rem;height:1rem;border-color:rgba(233,230,222,.4);border-style:solid;border-width:0}
+.g-standby i:nth-child(1){left:.8rem;top:.8rem;border-left-width:1px;border-top-width:1px}
+.g-standby i:nth-child(2){right:.8rem;top:.8rem;border-right-width:1px;border-top-width:1px}
+.g-standby i:nth-child(3){left:.8rem;bottom:.8rem;border-left-width:1px;border-bottom-width:1px}
+.g-standby i:nth-child(4){right:.8rem;bottom:.8rem;border-right-width:1px;border-bottom-width:1px}
+.g-standby span{position:absolute;left:0;right:0;top:calc(50% + .8rem);text-align:center;font:500 .8rem/1.4 var(--mono);letter-spacing:.1em}
+.g-idle{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0}
+.g-idle.on{opacity:1}
+.g-frame{position:absolute;inset:0;will-change:transform}
+.g-cv,.g-vid,.g-img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;opacity:0}
+.g-cv.on,.g-vid.on,.g-img.on{opacity:1}
+.g-hud{position:absolute;left:.5rem;right:.5rem;display:flex;justify-content:space-between;font:500 .8rem/1 var(--mono);letter-spacing:.06em;color:var(--lcd-ink);pointer-events:none;opacity:0}
+.g-hud.on{opacity:1}
+.g-hud span{background:rgba(23,23,22,.72);padding:.25rem .35rem}
+.g-hud.t{top:.5rem}.g-hud.b{bottom:.5rem}
+.g-tl{display:grid;grid-template-columns:repeat(30,1fr);gap:1px;height:.5rem;margin-top:.7rem}
+.g-tl i{background:rgba(20,20,20,.1);transform-origin:bottom}
+.g-tl i.f{background:var(--ink)}
+.g-tl.frames{grid-template-columns:repeat(9,1fr);gap:2px}
+.g-tl.frames i:nth-child(n+10){display:none}
+.g-doc{display:flex;justify-content:space-between;align-items:center;margin-top:.55rem;height:1.6rem;font:500 .9rem/1 var(--mono);letter-spacing:.05em;color:var(--ink-2);white-space:nowrap;gap:.4rem}
+.g-doc .p{font:600 1.05rem/1 var(--mono);padding:.3rem .4rem;background:var(--acc);color:var(--ink);opacity:0}
+.g-doc .p.on{opacity:1}
+.g-doc .ok{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink)}
+.gate.is-target .g-top b{box-shadow:inset 0 -.2rem 0 var(--acc)}
+.gate{cursor:pointer}
+.gate:focus-visible{outline:.2rem solid var(--ink);outline-offset:.3rem}
+.g-slot{height:.4rem;margin:.5rem 2.4rem 0;flex:none;border-radius:.2rem;background:#1E1E1C;box-shadow:inset 0 .1rem .1rem #000,0 .1rem 0 rgba(255,255,255,.8)}
+
+/* 03 ВЫХОД — склад */
+.store{grid-column:10/13;grid-row:1;position:relative;z-index:3;display:flex;flex-direction:column;padding:.9rem .9rem .9rem}
+.s-main{position:relative;height:16.4rem;background:var(--lcd);border-radius:.2rem;overflow:hidden;box-shadow:inset 0 0 0 1px #000}
+.s-chip{position:absolute;left:.5rem;top:.5rem;z-index:3;font:500 .8rem/1 var(--mono);letter-spacing:.08em;color:var(--lcd-ink);background:rgba(23,23,22,.72);padding:.25rem .35rem}
+.s-prompt{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:.45rem .6rem;font:400 1.1rem/1.3 var(--sans);color:var(--lcd-ink);background:rgba(23,23,22,.74);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s-rcpt{position:relative;margin-top:.6rem;height:3.4rem;background:var(--paper-tk);border:1px solid rgba(20,20,20,.16);border-radius:.15rem;padding:.45rem .65rem;font:500 .85rem/1.3 var(--mono);letter-spacing:.01em;white-space:nowrap;overflow:hidden;box-shadow:0 .1rem .2rem rgba(20,20,20,.08)}
+.s-rcpt p{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
+.s-rcpt .r1{font-weight:600}
+.s-rcpt b{font:600 1.05rem/1 var(--mono);background:var(--acc);padding:.15rem .35rem;margin-top:-.1rem}
+.s-rcpt .ok{color:var(--ink)}
+.s-rcpt .js{display:none}
+.is-dev .s-rcpt .hm{display:none}
+.is-dev .s-rcpt .js{display:flex}
+.s-l{position:absolute;inset:0;will-change:transform;background:var(--lcd)}
+.s-l img,.s-l video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.s-l video{opacity:0}
+.s-l video.on{opacity:1}
+.s-l.portrait img,.s-l.portrait video{object-fit:contain;object-position:50% 50%}
+.s-dim{position:absolute;right:.5rem;top:.5rem;font:500 .8rem/1 var(--mono);letter-spacing:.06em;color:var(--lcd-ink);background:rgba(23,23,22,.72);padding:.25rem .35rem;z-index:3}
+.s-rack{position:relative;flex:1;margin-top:.6rem;display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem}
+.s-rack .s-chip{left:.4rem;top:.4rem;z-index:4;font-size:.7rem}
+.s-th{position:relative;overflow:hidden;background:var(--lcd);border-radius:.15rem;will-change:transform}
+.s-th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.s-th figcaption{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:.25rem .35rem;font:500 .75rem/1 var(--mono);letter-spacing:.03em;background:rgba(251,250,246,.94);color:var(--ink);white-space:nowrap}
+.s-th figcaption b{font-weight:600}
+
+/* Лента и принтер */
+.belt{grid-column:1/13;grid-row:2;position:relative;z-index:1}
+.belt-band{position:absolute;left:0;right:0;top:1.4rem;bottom:0;background:var(--paper-lo);border-top:1px solid var(--hair-3);border-bottom:1px solid var(--hair-3);overflow:hidden;box-shadow:inset 0 .3rem .4rem -.3rem rgba(20,20,20,.18)}
+.belt-strip{position:absolute;left:0;top:0;bottom:0;width:200%;will-change:transform}
+.belt-strip svg{display:block;width:100%;height:100%}
+.belt-strip line{stroke:rgba(20,20,20,.18);stroke-width:1;vector-effect:non-scaling-stroke}
+.belt-strip line.m{stroke:rgba(20,20,20,.34)}
+.belt-strip path{fill:rgba(20,20,20,.22)}
+.tray{grid-column:1/4;grid-row:2;position:relative;z-index:3;pointer-events:none}
+.p-head{position:absolute;left:0;top:1rem;bottom:-.3rem;width:5.4rem;z-index:4;background:var(--ink);border-radius:.3rem;color:var(--paper);display:flex;flex-direction:column;justify-content:space-between;padding:.7rem .6rem;box-shadow:0 1rem 1.4rem -1rem rgba(20,20,20,.6),inset 0 .1rem 0 rgba(255,255,255,.12)}
+.p-head span{font:500 .75rem/1.2 var(--mono);letter-spacing:.1em;color:rgba(238,236,231,.7)}
+.p-head::after{content:"";position:absolute;right:-.1rem;top:2.2rem;bottom:1.6rem;width:.3rem;background:#000;border-radius:.1rem}
+.p-head .led{width:.6rem;height:.6rem}
+.tray-lbl{position:absolute;left:7rem;bottom:.6rem;font:500 .8rem/1 var(--mono);letter-spacing:.08em;color:var(--mute-2);z-index:0}
+.p-slot{position:absolute;height:.4rem;border-radius:.2rem;background:#1E1E1C;box-shadow:inset 0 .1rem .1rem #000,0 .1rem 0 rgba(255,255,255,.7);z-index:5}
+.tokens{position:absolute;inset:0;z-index:2;pointer-events:none}
+.tokens .tk{position:absolute;left:0;top:0;will-change:transform,opacity;visibility:hidden}
+.tk{width:15.2rem}
+.tk-paper{position:relative;background:var(--paper-tk);border:1px solid rgba(20,20,20,.16);border-radius:.15rem;padding:.5rem .65rem .45rem;box-shadow:0 .1rem .2rem rgba(20,20,20,.1),0 .7rem .9rem -.7rem rgba(20,20,20,.35);font:500 .85rem/1.28 var(--mono);letter-spacing:.01em;color:var(--ink);white-space:nowrap;overflow:hidden}
+.tk-paper::before{content:"";position:absolute;left:0;top:0;bottom:0;width:.25rem;background:repeating-linear-gradient(180deg,transparent 0 .25rem,rgba(20,20,20,.14) .25rem .5rem)}
+.tk-l1{font-weight:600}
+.tk-l3{display:flex;justify-content:space-between;align-items:center;margin-top:.3rem;padding-top:.3rem;border-top:1px dashed rgba(20,20,20,.28);color:var(--mute)}
+.tk-l3 b{font:600 1.15rem/1 var(--mono);color:var(--ink);background:var(--acc);padding:.2rem .35rem}
+.tk-l3 .ok{display:none;color:var(--ink)}
+.tk.done .tk-l3 .q{display:none}
+.tk.done .tk-l3 .ok{display:inline}
+.tk .js{display:none}
+.is-dev .tk .hm{display:none}
+.is-dev .tk .js{display:block}
+.is-dev .tk .tk-l3.js{display:flex}
+.tk-l3.js{color:var(--ink)}
+.tk-l3.js b{font:600 .95rem/1 var(--mono);padding:.15rem .25rem;margin-left:.1rem}
+.tk-thumb{position:absolute;right:.5rem;top:-3.4rem;width:6.2rem;height:3.6rem;background:var(--lcd);border:1px solid rgba(20,20,20,.5);box-shadow:0 .4rem .6rem -.3rem rgba(20,20,20,.4);overflow:hidden;display:none}
+.tk.done .tk-thumb{display:block}
+.tk-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.tk-m{display:none}
+.tk.mini{width:auto}
+.tk.mini .tk-paper,.tk.mini .tk-thumb{display:none}
+.tk.mini .tk-m{display:block;font:600 .9rem/1 var(--mono);letter-spacing:.02em;background:var(--ink);color:var(--paper);padding:.35rem .4rem;box-shadow:0 .3rem .5rem -.2rem rgba(20,20,20,.5)}
+.tk-m i{font-style:normal;display:none}
+.tk.done .tk-m i{display:inline}
+
+/* ---------- Строка доверия ---------- */
+.trust{flex:none;height:5.6rem;align-items:center;position:relative;z-index:3;font-size:1.3rem;color:var(--ink-2)}
+.t-aegis{grid-column:1/7;display:flex;align-items:center;gap:1rem;white-space:nowrap}
+.t-lbl{font:500 .9rem/1 var(--mono);letter-spacing:.1em;color:var(--mute);margin-right:.4rem}
+.logo-slot{position:relative;display:inline-flex;align-items:center;height:3rem;padding:0 1.2rem;font-weight:600;font-size:1.35rem;letter-spacing:-.01em;color:var(--ink)}
+.logo-slot::before{content:"";position:absolute;inset:0;border:1px solid var(--hair-3);border-radius:.2rem}
+.logo-slot::after{content:"СЛОТ ЛОГОТИПА";position:absolute;right:.3rem;top:-.5rem;font:500 .6rem/1 var(--mono);letter-spacing:.08em;color:var(--mute-2);background:var(--paper);padding:0 .3rem}
+.t-and{color:var(--mute)}
+.t-legal{grid-column:7/11;display:flex;align-items:center;gap:1rem;white-space:nowrap}
+.t-legal .plq{display:inline-flex;align-items:center;gap:.9rem;height:3rem;padding:0 1.2rem;border:1px solid var(--ink);border-radius:.2rem;font:500 1rem/1 var(--mono);letter-spacing:.06em;color:var(--ink)}
+.t-legal .plq i{width:1px;height:1.2rem;background:var(--hair-3)}
+.t-vpn{grid-column:11/13;justify-self:end;display:flex;align-items:center;gap:.8rem;font:500 1rem/1.2 var(--mono);letter-spacing:.06em;color:var(--ink);white-space:nowrap}
+
+/* ---------- Мобильная мизансцена: вертикальная линия ---------- */
+@media (max-width:1099px){
+  html{font-size:10px}
+  .sheet{height:auto;min-height:100vh;padding:0 1.6rem 2.4rem;overflow:hidden}
+  .cols{left:1.6rem;right:1.6rem;display:grid;grid-template-columns:repeat(4,1fr)!important;column-gap:1.2rem}
+  .cols i:nth-child(n+5){display:none}
+  .g12{grid-template-columns:repeat(4,minmax(0,1fr));column-gap:1.2rem}
+  .nav{height:5.6rem}
+  .logo{grid-column:1/3}
+  .nav-links{display:none}
+  .nav-act{grid-column:3/5;gap:1.4rem}
+  .nav-act .nav-in{font-size:1.4rem}
+  .ruler span:nth-child(n+5){display:none}
+  #main{display:flex;flex-direction:column}
+  .hero-copy,.panel,.line{grid-column:auto;grid-row:auto;width:100%;min-width:0}
+  .hero-copy{order:1;padding-top:1.6rem}.panel{order:2;align-self:stretch}.line{order:3}
+  .h1-tag{display:none}
+  .h1-in{white-space:normal}
+  .eyebrow{font-size:1rem;letter-spacing:.06em}
+  h1{font-size:clamp(3.6rem,11.6vw,6.4rem);margin-top:1.4rem;line-height:1}
+  .h1-tag{margin:.55rem 1rem 0 0;font-size:.9rem}
+  .sub{font-size:1.42rem;line-height:1.45;margin-top:1.2rem}
+  .cta{flex-wrap:wrap;margin-top:1.6rem;gap:.8rem}
+  .cta .btn{flex:1 1 100%;height:4.4rem}
+  .cta-note{margin:0;max-width:none}
+  /* компактная панель-полоса: режим · баланс · статус */
+  .panel{margin-top:2rem;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"mode mode" "cred snd" "stat stat";gap:1rem 1.2rem;padding:1rem 1.2rem 1.1rem;align-items:center}
+  .p-top{display:contents}
+  .p-top > span{display:none}
+  .snd{grid-area:snd}
+  .p-mode{grid-area:mode}
+  .p-cred{grid-area:cred}
+  .p-status{grid-area:stat}
+  .p-mode .p-lbl,.p-cred .p-lbl,.p-sep,.p-legal{display:none}
+  .credits{align-items:baseline;gap:.6rem;white-space:nowrap}
+  .od-xl{font-size:2.6rem}
+  .credits-u{font-size:1.35rem;padding:0}
+  .credits-u br{display:none}
+  .line{height:auto;margin-top:2rem}
+  .line-head,.line-foot{display:none}
+  .line-body{display:grid;grid-template-columns:2.6rem minmax(0,1fr);grid-template-rows:auto;row-gap:0;column-gap:1rem;transform:none!important}
+  .m-lbl{display:flex!important;grid-column:2;margin:2rem 0 .6rem;font:500 1rem/1 var(--mono);letter-spacing:.08em;color:var(--ink-2);align-items:center;gap:.8rem}
+  .m-lbl b{color:var(--ink)}
+  .m-lbl::after{content:"";flex:1;height:1px;background:var(--hair-3)}
+  .m-lbl:first-child{margin-top:0}
+  .st-in{grid-column:2;grid-row:auto;height:28.6rem}
+  .tray{grid-column:2;grid-row:auto;z-index:1;height:7.6rem;margin-top:.8rem;border:1px solid var(--hair-3);border-radius:.3rem;background:var(--paper-lo);box-shadow:inset 0 .2rem .4rem rgba(20,20,20,.12)}
+  .p-head{top:.6rem;bottom:.6rem;left:.6rem}
+  .gates{grid-column:2;grid-row:auto;grid-template-columns:1fr 1fr;gap:1rem}
+  .gate:nth-child(3){grid-column:auto}
+  .gate{height:30rem}
+  .store{grid-column:2;grid-row:auto}
+  .s-main{height:auto;aspect-ratio:16/10}
+  .s-rack{height:8rem;flex:none}
+  .belt{grid-column:1;grid-row:1/span 20;position:relative}
+  .belt-band{left:.4rem;right:.4rem;top:0;bottom:0;border:0;border-left:1px solid var(--hair-3);border-right:1px solid var(--hair-3)}
+  .belt-strip{width:100%;height:200%;left:0;top:0;bottom:auto}
+  .trust{height:auto;display:flex;flex-direction:column;align-items:flex-start;gap:1.2rem;margin-top:3.2rem}
+  .t-aegis{flex-wrap:wrap;white-space:normal}
+  .t-legal .plq{height:auto;padding:.8rem 1rem;flex-wrap:wrap;white-space:normal;line-height:1.5}
+  .t-vpn{justify-self:start}
+  .tk.mini{transform-origin:left center}
+  .tray-lbl{display:none}
+}
+.m-lbl{display:none}
+@media (min-width:700px) and (max-width:1099px){
+  .gates{grid-template-columns:repeat(2,minmax(0,1fr)) .4rem repeat(2,minmax(0,1fr));column-gap:1rem}
+  .gate:nth-child(3){grid-column:4}
+  .gate{height:32rem}
+  .s-main{aspect-ratio:16/8}
+}
+
+/* Наклон линии (лёгкая перспектива, как предмет на столе) */
+@media (min-width:1100px){
+  .line-body{transform:perspective(220rem) rotateX(7deg)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+}
+html.rm *,html.rm *::before,html.rm *::after{transition:none!important}
+</style>
+</head>
+<body>
+<div class="sheet" id="sheet">
+  <div class="cols g12" id="cols" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <svg class="drawing" id="drawing" aria-hidden="true"></svg>
+
+  <!-- ============ НАВИГАЦИЯ ============ -->
+  <header class="nav g12">
+    <a class="logo" href="#" aria-label="Синтез — на главную">
+      <svg viewBox="0 0 22 22" aria-hidden="true"><rect x="0.5" y="0.5" width="21" height="21" fill="none" stroke="#141414"/><line x1="0.5" y1="11" x2="13" y2="11" stroke="#141414"/><rect x="13" y="6.5" width="9" height="9" fill="#141414"/></svg>
+      <span data-brand>Синтез</span>
+    </a>
+    <nav class="nav-links" aria-label="Основная навигация">
+      <a href="#models">Модели</a><a href="#pricing">Цены</a><a href="#api">API</a><a href="#teams">Для команд</a>
+    </nav>
+    <div class="nav-act">
+      <a class="nav-in" href="#login">Войти</a>
+      <a class="btn btn-ink btn-sm" href="#signup">Начать бесплатно</a>
+    </div>
+  </header>
+
+  <!-- координатная линейка A1…A12 -->
+  <div class="ruler g12" aria-hidden="true"><span>A1</span><span>A2</span><span>A3</span><span>A4</span><span>A5</span><span>A6</span><span>A7</span><span>A8</span><span>A9</span><span>A10</span><span>A11</span><span>A12</span></div>
+
+  <main id="main" class="g12">
+    <!-- ============ ВЕРХНЯЯ ПОЛОВИНА ============ -->
+    <section class="hero-copy" aria-labelledby="h1">
+        <p class="eyebrow"><i aria-hidden="true"></i>ЛИНИЯ СИНТЕЗА · 4&nbsp;МОДЕЛИ · ЦЕНЫ В&nbsp;₽</p>
+        <h1 id="h1">
+          <span class="h1-line"><span class="h1-in"><span class="h1-tag" aria-hidden="true">01 ВХОД</span><span>Идея на&nbsp;входе.</span></span></span>
+          <span class="h1-line"><span class="h1-in"><span class="h1-tag" aria-hidden="true">03 ВЫХОД</span><span>Готовый кадр на&nbsp;выходе.</span></span></span>
+        </h1>
+        <p class="sub">Четыре топ-модели на&nbsp;одной линии: Seedance&nbsp;2.5 и&nbsp;Kling&nbsp;3.0&nbsp;— для видео, Seedream&nbsp;5.0 и&nbsp;Kling&nbsp;Image&nbsp;3.0&nbsp;— для изображений. Стоимость каждой генерации в&nbsp;рублях известна до&nbsp;старта. Договор с&nbsp;российским юрлицом, оплата по&nbsp;счёту.</p>
+        <div class="cta">
+          <a class="btn btn-acc" href="#signup">Получить стартовые кредиты</a>
+          <a class="btn btn-line" href="#api" id="ctaApi">Подключить по&nbsp;API <span aria-hidden="true">→</span></a>
+          <p class="cta-note"><b><span data-credits>500</span>&nbsp;кредитов</b> на&nbsp;пробные генерации каждому новому аккаунту</p>
+        </div>
+    </section>
+
+      <!-- панель прибора -->
+      <aside class="panel" aria-label="Панель прибора">
+        <div class="p-top"><span>P-01 · ПАНЕЛЬ</span>
+          <button class="snd" id="snd" type="button" aria-pressed="false"><i class="led" aria-hidden="true"></i>ЗВУК · <span id="sndLbl">ВЫКЛ</span></button>
+        </div>
+        <div class="p-mode">
+          <span class="p-lbl" id="modeLbl">РЕЖИМ</span>
+          <fieldset class="mode" aria-labelledby="modeLbl">
+            <legend class="sr">Режим отображения</legend>
+            <i class="mode-thumb" aria-hidden="true"></i>
+            <label><input type="radio" name="mode" value="prod" checked><span>Продюсеру</span></label>
+            <label><input type="radio" name="mode" value="dev"><span>Разработчику</span></label>
+          </fieldset>
+        </div>
+        <div class="p-sep"></div>
+        <div class="p-cred">
+          <span class="p-lbl">БАЛАНС НОВОГО АККАУНТА</span>
+          <div class="credits"><span class="od od-xl" id="odCredits" aria-hidden="true">500</span><span class="credits-u">кредитов <br>на&nbsp;старте</span><span class="sr" data-credits-sr>500 кредитов на старте</span></div>
+        </div>
+        <div class="p-sep"></div>
+        <p class="p-status"><i class="led on" aria-hidden="true"></i>РАБОТАЕТ ИЗ РОССИИ · БЕЗ&nbsp;VPN</p>
+        <p class="p-legal">ЮРЛИЦО РФ · ДОГОВОР · СЧЁТ В&nbsp;₽</p>
+      </aside>
+
+    <!-- ============ НИЖНЯЯ ПОЛОВИНА: ЛИНИЯ ============ -->
+    <section class="line" aria-label="Линия синтеза: вход, шлюзы моделей, выход" id="models">
+      <div class="line-head g12" aria-hidden="true">
+        <div class="dim lh-in"><span><b>01</b> ВХОД · ТЕКСТ + РЕФЕРЕНС</span></div>
+        <div class="lh-gates">
+          <div class="dim dim-v"><span><b>02</b> ШЛЮЗЫ · ВИДЕО · ₽ ЗА СЕКУНДУ</span></div>
+          <div class="dim dim-i"><span>ИЗОБРАЖЕНИЯ · ₽ ЗА ШТУКУ</span></div>
+        </div>
+        <div class="dim lh-out"><span><b>03</b> ВЫХОД · СКЛАД</span></div>
+      </div>
+
+      <div class="line-body g12" id="lineBody">
+        <p class="m-lbl" aria-hidden="true"><b>01</b> ВХОД</p>
+        <!-- 01 ВХОД -->
+        <div class="st-in" id="station">
+          <div class="flip" id="flip">
+            <form class="face face-front mod composer" id="composer" autocomplete="off" aria-label="Строка генерации">
+              <div class="c-head"><span>ЗАКАЗ № <b class="num" id="cNo">0427</b></span><span class="c-mode" id="cMode">ТЕКСТ → ВИДЕО</span></div>
+              <div class="c-io">
+                <label class="c-prompt"><span class="c-lbl">ПРОМПТ</span><textarea id="prompt" rows="3" spellcheck="false" aria-label="Промпт" placeholder="Опишите кадр"></textarea></label>
+                <div class="c-ref" id="refSlot">
+                  <button class="c-ref-btn" type="button" id="refBtn" aria-label="Добавить референс"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" fill="none"/></svg>РЕФ.</button>
+                  <div class="c-ref-img" id="refImg"><img alt="" id="refPic"><span id="refTag">4:5</span></div>
+                  <button class="c-ref-x" type="button" id="refX" aria-label="Убрать референс">×</button>
+                  <input type="file" accept="image/*" id="refFile" hidden>
+                </div>
+              </div>
+              <fieldset class="c-models" id="cModels">
+                <legend class="sr">Модель</legend>
+                <span class="c-grp-l">ВИДЕО</span>
+                <label class="key" data-m="seedance-2.5"><input type="radio" name="model" value="seedance-2.5"><span>Seedance 2.5</span></label>
+                <label class="key" data-m="kling-3.0"><input type="radio" name="model" value="kling-3.0"><span>Kling 3.0</span></label>
+                <span class="c-grp-l">ИЗОБР.</span>
+                <label class="key" data-m="seedream-5.0"><input type="radio" name="model" value="seedream-5.0"><span>Seedream 5.0</span></label>
+                <label class="key" data-m="kling-image-3.0"><input type="radio" name="model" value="kling-image-3.0"><span>Kling Image 3.0</span></label>
+              </fieldset>
+              <div class="c-params" id="cParams" data-kind="video">
+                <fieldset class="seg p-video" id="segDur"><legend>ДЛИТ.</legend></fieldset>
+                <fieldset class="seg p-video" id="segRes"><legend>РАЗР.</legend></fieldset>
+                <fieldset class="seg p-image" id="segFmt"><legend>ФОРМ.</legend></fieldset>
+                <fieldset class="seg p-image" id="segIres"><legend>РАЗР.</legend></fieldset>
+              </div>
+              <button class="launch" type="submit" id="launch">
+                <span class="launch-base" aria-hidden="true"></span>
+                <span class="launch-cap"><span class="launch-l">ЗАПУСТИТЬ</span><span class="launch-p"><span class="od launch-od" id="odPrice" aria-hidden="true">—</span></span></span>
+                <span class="sr" id="srPrice" aria-live="polite"></span>
+              </button>
+              <p class="c-formula"><span>ЦЕНА ДО ЗАПУСКА</span><span id="formula" class="num">—</span></p>
+            </form>
+            <div class="face face-back mod dev" id="dev" aria-label="Тот же заказ через API" inert>
+              <div class="d-head"><span><b>01</b> · POST /v1/generations</span><button class="d-copy" type="button" id="copy">КОПИРОВАТЬ</button></div>
+              <pre class="d-code" id="code"></pre>
+              <p class="d-foot"><span>MODEL — ОДНА СТРОКА</span><span><b>COST_RUB</b> — ДО ЗАПУСКА</span></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- принтер чеков: лоток в начале ленты -->
+        <div class="tray" id="tray" aria-hidden="true">
+          <div class="p-head" id="pHead"><span>ЧЕК</span><i class="led" id="pLed"></i><span>₽</span></div>
+          <i class="p-slot" id="pSlot"></i>
+        </div>
+
+        <p class="m-lbl" aria-hidden="true"><b>02</b> ШЛЮЗЫ · ВИДЕО · ИЗОБРАЖЕНИЯ</p>
+        <!-- 02 ШЛЮЗЫ -->
+        <div class="gates" id="gates"></div>
+
+        <p class="m-lbl" aria-hidden="true"><b>03</b> ВЫХОД · СКЛАД</p>
+        <!-- 03 ВЫХОД -->
+        <section class="store mod" id="store" aria-label="Склад готовых кадров">
+          <div class="s-main" id="sMain">
+            <div class="s-l" id="sL0"><img alt=""><video muted playsinline loop preload="auto" aria-hidden="true" disablepictureinpicture></video></div>
+            <div class="s-l" id="sL1"><img alt=""><video muted playsinline loop preload="auto" aria-hidden="true" disablepictureinpicture></video></div>
+            <span class="s-chip">ВИДЕО</span>
+            <span class="s-dim" id="sDim">1280 × 720</span>
+            <p class="s-prompt" id="sPrompt"></p>
+          </div>
+          <div class="s-rcpt" id="sRcpt" aria-live="off"></div>
+          <div class="s-rack" id="sRack"><span class="s-chip">ИЗОБРАЖЕНИЯ</span></div>
+        </section>
+
+        <!-- лента -->
+        <div class="belt" id="belt" aria-hidden="true"><div class="belt-band"><div class="belt-strip" id="beltStrip"></div></div></div>
+        <div class="tokens" id="tokens" aria-hidden="true"></div>
+      </div>
+
+      <div class="line-foot g12" aria-hidden="true"><span class="lf-a">↑ ЧЕК С&nbsp;ЦЕНОЙ ПЕЧАТАЕТСЯ ДО&nbsp;ЗАПУСКА</span><span class="lf-m">ЛЕНТА · ТАКТ 120&nbsp;МС · ШАГ ½ МОДУЛЯ</span><span class="lf-b">→ СКЛАД</span></div>
+    </section>
+  </main>
+
+  <!-- ============ СТРОКА ДОВЕРИЯ ============ -->
+  <footer class="trust g12">
+    <p class="t-aegis"><span class="t-lbl">ПОД ЭГИДОЙ</span>
+      <!-- TODO: официальные логотипы из брендбука -->
+      <span class="logo-slot">Ростелекома</span><span class="t-and">и</span>
+      <!-- TODO: официальные логотипы из брендбука -->
+      <span class="logo-slot">Национальной Медиа Группы</span>
+    </p>
+    <p class="t-legal"><span class="plq">РОССИЙСКОЕ ЮРЛИЦО <i></i> ДОГОВОР <i></i> ОПЛАТА ПО&nbsp;СЧЁТУ В&nbsp;₽</span></p>
+    <p class="t-vpn"><i class="led on" aria-hidden="true"></i>РАБОТАЕТ ИЗ&nbsp;РОССИИ БЕЗ&nbsp;VPN</p>
+  </footer>
+</div>
+
+<template id="tplGate">
+  <article class="gate mod">
+    <div class="g-top"><span><b class="g-no">02.1</b><span class="g-kind">ВИДЕО</span></span><span class="r"><span class="g-id"></span><i class="led" data-s="off"></i></span></div>
+    <h3 class="g-name"><span class="h"></span><span class="d"></span></h3>
+    <p class="g-price"><span class="g-pr"></span></p>
+    <p class="g-cap"></p>
+    <div class="g-win">
+      <img class="g-idle" alt=""><div class="g-standby"><i></i><i></i><i></i><i></i><span>ОЖИДАНИЕ</span></div>
+      <div class="g-frame"><canvas class="g-cv"></canvas><video class="g-vid" muted playsinline loop preload="auto" aria-hidden="true" disablepictureinpicture></video></div>
+      <div class="g-hud t"><span class="g-step">ШАГ 0/30</span><span class="g-noise">ШУМ 1,00</span></div>
+      <div class="g-hud b"><span class="g-spec">16:9 · 1080P</span></div>
+    </div>
+    <div class="g-tl"></div>
+    <div class="g-doc"><span class="g-st">СВОБОДЕН</span><span class="p"></span></div>
+    <div class="g-slot" aria-hidden="true"></div>
+  </article>
+</template>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+   0 · CONFIG
+   ЗАГЛУШКИ: заменить на реальный прайс
+   ===================================================================== */
+const CONFIG = {
+  brand: 'Синтез',
+  apiHost: 'api.sintez.example',   // заглушка
+  starterCredits: 500,              // заглушка
+  models: [
+    { id: 'seedance-2.5',    name: 'Seedance 2.5',    kind: 'video', unit: 'сек',  priceRub: 12 },
+    { id: 'kling-3.0',       name: 'Kling 3.0',       kind: 'video', unit: 'сек',  priceRub: 14 },
+    { id: 'seedream-5.0',    name: 'Seedream 5.0',    kind: 'image', unit: 'изобр.', priceRub: 4 },
+    { id: 'kling-image-3.0', name: 'Kling Image 3.0', kind: 'image', unit: 'изобр.', priceRub: 5 },
+  ],
+  pricing: {
+    video: { durations: [5, 10, 15], resolutions: { '720p': 1, '1080p': 1.25 } },
+    image: { resolutions: { '1K': 1, '2K': 1.5 }, formats: ['16:9','1:1','4:5','9:16'] },
+  },
+  // Возможности шлюзов (подписи на модулях)
+  caps: {
+    'seedance-2.5':    'ТЕКСТ · ФОТО → ВИДЕО',
+    'kling-3.0':       'ТЕКСТ · ФОТО → ВИДЕО',
+    'seedream-5.0':    'ТЕКСТ → ИЗОБРАЖЕНИЕ',
+    'kling-image-3.0': 'ТЕКСТ → ИЗОБРАЖЕНИЕ',
+  },
+  // Ассеты: каждый сгенерирован той моделью, через чей шлюз он идёт (см. ../assets/manifest.json)
+  assets: {
+    'vid-moscow-night':    { kind:'video', model:'seedance-2.5',    w:1280, h:720,  dur:4.5, src:'../assets/vid-moscow-night.mp4',    poster:'../assets/vid-moscow-night.webp',    focus:[.62,.55], prompt:'Ночная Москва после дождя, чёрный седан на мокром бульваре, анаморфные блики' },
+    'vid-dancer':          { kind:'video', model:'seedance-2.5',    w:720,  h:1280, dur:4.5, src:'../assets/vid-dancer.mp4',          poster:'../assets/vid-dancer.webp',          focus:[.5,.4],  prompt:'Танец в тёмной студии среди тёплых частиц света, слоу-мо, световые следы' },
+    'vid-perfume-gold':    { kind:'video', model:'kling-3.0',       w:1280, h:720,  dur:4.5, src:'../assets/vid-perfume-gold.mp4',    poster:'../assets/vid-perfume-gold.webp',    focus:[.5,.5],  prompt:'Флакон духов медленно погружается в жидкое золото, макро, каустика' },
+    'vid-taiga-dawn':      { kind:'video', model:'kling-3.0',       w:1280, h:720,  dur:4.5, src:'../assets/vid-taiga-dawn.mp4',      poster:'../assets/vid-taiga-dawn.webp',      focus:[.5,.5],  prompt:'Пролёт дрона над заснеженной тайгой на рассвете, туман, первые лучи' },
+    'vid-ceramics':        { kind:'video', model:'kling-3.0',       w:1280, h:720,  dur:4.5, src:'../assets/vid-ceramics.mp4',        poster:'../assets/vid-ceramics.webp',        focus:[.6,.45], prompt:'Руки керамиста на гончарном круге, мягкий дневной свет из окна' },
+    'vid-salt-desert-i2v': { kind:'video', model:'kling-3.0',       w:864,  h:1078, dur:4.5, src:'../assets/vid-salt-desert-i2v.mp4', poster:'../assets/vid-salt-desert-i2v.webp', focus:[.5,.45], prompt:'Оживить референс: ветер поднимает пальто, соляная пыль, медленный наезд', ref:'img-salt-desert' },
+    'img-salt-desert':     { kind:'image', model:'seedream-5.0',    w:1280, h:1600, src:'../assets/img-salt-desert.webp', focus:[.5,.45], prompt:'Модель в скульптурном пальто цвета слоновой кости в соляной пустыне, золотой час' },
+    'img-fisherman':       { kind:'image', model:'seedream-5.0',    w:1280, h:1600, src:'../assets/img-fisherman.webp',   focus:[.5,.35], prompt:'Портрет пожилого северного рыбака, пасмурный свет, Kodak Portra 400' },
+    'img-coupe':           { kind:'image', model:'seedream-5.0',    w:1600, h:900,  src:'../assets/img-coupe.webp',       focus:[.6,.6],  prompt:'Серебристое купе на прибрежной дороге, золотой час, плёночное зерно' },
+    'img-brutalist':       { kind:'image', model:'seedream-5.0',    w:1600, h:900,  src:'../assets/img-brutalist.webp',   focus:[.66,.5], prompt:'Бетонная лестница в стиле брутализма, жёсткое утреннее солнце, фигура в красном' },
+    'img-cherries':        { kind:'image', model:'kling-image-3.0', w:1600, h:1600, src:'../assets/img-cherries.webp',    focus:[.5,.4],  prompt:'Вишни падают в расплавленный шоколад, скоростная макросъёмка, контровой свет' },
+    'img-chrome':          { kind:'image', model:'kling-image-3.0', w:1600, h:904,  src:'../assets/img-chrome.webp',      focus:[.5,.5],  prompt:'Скульптура из жидкого хрома на тёплой белой циклораме, предметная съёмка' },
+    'img-sparkling':       { kind:'image', model:'kling-image-3.0', w:1205, h:1600, src:'../assets/img-sparkling.webp',   focus:[.45,.5], prompt:'Бутылка минеральной воды и лимон на травертине, утренний свет из окна' },
+    'img-saxophonist':     { kind:'image', model:'kling-image-3.0', w:1205, h:1600, src:'../assets/img-saxophonist.webp', focus:[.55,.35],prompt:'Саксофонист на сцене джаз-клуба, тёплый луч прожектора, дым' },
+  },
+  tick: 0.12,          // такт конвейера, с
+  diffusionSteps: 30,  // шагов сэмплера в окне шлюза
+};
+
+/* =====================================================================
+   1 · УТИЛИТЫ
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const NB = ' ';
+const TK = CONFIG.tick;
+const MODEL = Object.fromEntries(CONFIG.models.map(m => [m.id, m]));
+const GATE_OF = { 'seedance-2.5': 0, 'kling-3.0': 1, 'seedream-5.0': 2, 'kling-image-3.0': 3 };
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const backOut = (p, s = 1.6) => { p -= 1; return p * p * ((s + 1) * p + s) + 1; };
+// механический шаг: движение в первой половине такта с пружинной защёлкой, затем удержание
+const tickEase = f => backOut(Math.min(1, f / 0.5), 1.5);
+function stepped(t0, n, T, unit = TK) {
+  if (T <= t0) return 0;
+  const e = (T - t0) / unit;
+  if (e >= n) return 1;
+  const k = Math.floor(e);
+  return (k + tickEase(e - k)) / n;
+}
+const pad4 = n => String(n).padStart(4, '0');
+const isVideoModel = id => MODEL[id].kind === 'video';
+const upper = s => s.toUpperCase();
+
+/* =====================================================================
+   2 · ЦЕНЫ. Стоимость = priceRub × (видео ? секунды : 1) × коэффициент разрешения
+   ===================================================================== */
+function costOf(o) {
+  const m = MODEL[o.model];
+  if (m.kind === 'video') return m.priceRub * o.dur * CONFIG.pricing.video.resolutions[o.res];
+  return m.priceRub * CONFIG.pricing.image.resolutions[o.ires];
+}
+// 1 240,50 ₽ · неразрывные пробелы в разрядах и перед ₽
+function fmtRub(v, decimals = 'auto') {
+  const [i, d] = (Math.round(v * 100) / 100).toFixed(2).split('.');
+  const int = i.replace(/\B(?=(\d{3})+(?!\d))/g, NB);
+  const show = decimals === true || (decimals === 'auto' && d !== '00');
+  return (show ? int + ',' + d : int) + NB + '₽';
+}
+const fmtK = k => String(k).replace('.', ',');
+const fmtNum2 = v => (Math.round(v * 100) / 100).toFixed(2); // для JSON: 150.00
+function specOf(o) {
+  return isVideoModel(o.model) ? `${o.dur}${NB}С · ${upper(o.res)}` : `${o.fmt} · ${o.ires}`;
+}
+function outDims(o) {
+  const a = CONFIG.assets[o.asset];
+  const ar = a.w / a.h;
+  if (isVideoModel(o.model)) {
+    const short = o.res === '1080p' ? 1080 : 720;
+    return ar >= 1 ? [Math.round(short * ar / 2) * 2, short] : [short, Math.round(short / ar / 2) * 2];
+  }
+  const long = o.ires === '2K' ? 2048 : 1024;
+  return ar >= 1 ? [long, Math.round(long / ar)] : [Math.round(long * ar), long];
+}
+const aspectLabel = a => {
+  const r = a.w / a.h;
+  const known = [['16:9', 16/9], ['9:16', 9/16], ['4:5', 4/5], ['3:4', 3/4], ['1:1', 1]];
+  return known.reduce((b, k) => Math.abs(k[1] - r) < Math.abs(b[1] - r) ? k : b)[0];
+};
+
+/* =====================================================================
+   3 · ШРИФТЫ: проверка кириллицы без фолбэка
+   ===================================================================== */
+const fontsReady = (async () => {
+  try {
+    await Promise.all([
+      document.fonts.load('640 66px "Geologica"', 'Идея на входе ёЁ ₽ →'),
+      document.fonts.load('400 16px "Geologica"', 'Четыре топ-модели ₽'),
+      document.fonts.load('500 12px "IBM Plex Mono"', 'ЗАКАЗ № 0427 ₽ → ✓'),
+      document.fonts.load('600 12px "IBM Plex Mono"', 'ИТОГО 150,00 ₽'),
+    ]);
+    await document.fonts.ready;
+    const ok = document.fonts.check('640 66px "Geologica"', 'Идея на входе. Готовый кадр ёЁ')
+            && document.fonts.check('500 12px "IBM Plex Mono"', 'ЗАКАЗ № ТЕКСТ ВИДЕО ₽');
+    window.__fontsCyrillic = ok;
+    document.documentElement.dataset.fonts = ok ? 'ok' : 'missing';
+  } catch (e) {
+    window.__fontsCyrillic = false;
+    document.documentElement.dataset.fonts = 'missing';
+  }
+})();
+
+/* =====================================================================
+   4 · АССЕТЫ: изображения и постеры; видео через fetch → Blob (Safari без Range)
+       Fallback: процедурный кадр, если файл не загрузился (бриф 7.3)
+   ===================================================================== */
+const A = CONFIG.assets;
+for (const [id, a] of Object.entries(A)) { a.id = id; a.el = null; a.url = null; a.vurl = null; a.fallback = false; }
+
+function proceduralFrame(id, w = 640, h = 400) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  const s = [...id].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+  const warm = 30 + (s % 20);
+  const g = x.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, `hsl(${warm} 18% 84%)`); g.addColorStop(.62, `hsl(${warm} 14% 74%)`); g.addColorStop(1, `hsl(${warm} 12% 58%)`);
+  x.fillStyle = g; x.fillRect(0, 0, w, h);
+  x.fillStyle = `hsl(${warm} 10% 30%)`;
+  const r = h * (.18 + (s % 7) / 60);
+  x.beginPath(); x.arc(w * (.35 + (s % 30) / 100), h * .58, r, 0, Math.PI * 2); x.fill();
+  const im = x.getImageData(0, 0, w, h); const d = im.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (Math.random() - .5) * 18; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  x.putImageData(im, 0, 0);
+  x.fillStyle = 'rgba(20,20,20,.7)'; x.font = '500 14px "IBM Plex Mono"'; x.fillText('ЗАГЛУШКА · ' + id, 14, h - 14);
+  return c;
+}
+
+function loadImage(a) {
+  const url = a.kind === 'video' ? a.poster : a.src;
+  return new Promise(res => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { a.el = img; a.url = url; res(); };
+    img.onerror = () => {
+      const c = proceduralFrame(a.id, Math.round(640 * Math.min(1, a.w / a.h)), Math.round(640 * Math.min(1, a.h / a.w)));
+      a.el = c; a.fallback = true; a.url = c.toDataURL('image/png'); res();
+    };
+    img.src = url;
+  });
+}
+async function loadVideo(a) {
+  try {
+    const r = await fetch(a.src);
+    if (!r.ok) throw new Error(r.status);
+    const b = await r.blob();
+    a.vurl = URL.createObjectURL(b);
+  } catch (e) { a.vurl = null; /* остаётся постер */ }
+}
+const imagesReady = Promise.all(Object.values(A).map(loadImage));
+const VIDEO_ORDER = ['vid-ceramics', 'vid-moscow-night', 'vid-salt-desert-i2v', 'vid-taiga-dawn', 'vid-dancer', 'vid-perfume-gold'];
+const videosReady = imagesReady.then(async () => {
+  for (let i = 0; i < VIDEO_ORDER.length; i += 2) await Promise.all(VIDEO_ORDER.slice(i, i + 2).map(id => loadVideo(A[id])));
+});
+const assetsReady = Promise.all([imagesReady, videosReady]);
+const transparentPx = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const imgURL = id => (A[id] && A[id].url) || (A[id] && (A[id].kind === 'video' ? A[id].poster : A[id].src)) || transparentPx;
+// <img> мог получить сырой путь до того, как загрузчик подменил ассет заглушкой:
+// вместо значка «битой» картинки показываем тот же процедурный кадр
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || img.src.startsWith('data:')) return;
+  const a = Object.values(A).find(x => img.src.endsWith(x.kind === 'video' ? x.poster : x.src));
+  if (!a) return;
+  img.src = a.fallback && a.url ? a.url
+    : proceduralFrame(a.id, Math.round(640 * Math.min(1, a.w / a.h)), Math.round(640 * Math.min(1, a.h / a.w))).toDataURL('image/png');
+}, true);
+
+/* =====================================================================
+   5 · ДИФФУЗИЯ (WebGL2, по маленькому контексту на шлюз — 4 контекста)
+       uStep 0→1; ᾱ(t) = cos²(((t+s)/(1+s))·π/2); x_t = √ᾱ·x₀ + √(1−ᾱ)·ε
+       ε — гауссов шум на латентной сетке, пересевается каждый шаг;
+       латент 1/8 → 1/4 → 1/2 → 1/1, лёгкое размытие, цвет проявляется поздно.
+   ===================================================================== */
+const VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main(){ vUv = aPos * .5 + .5; gl_Position = vec4(aPos, 0., 1.); }`;
+const FS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uTex; uniform float uStep; uniform float uSeed; uniform vec2 uRes;
+uniform vec2 uScale; uniform vec2 uOff; uniform float uDpr; uniform float uSteps;
+float h21(vec2 p){ vec3 q = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973)); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 gauss(vec2 p, float s){
+  float u1 = max(h21(p + s * 17.31), 1e-5); float u2 = h21(p * 1.37 + s * 7.77 + 3.1);
+  float r = sqrt(-2. * log(u1)); return vec2(r * cos(6.2831853 * u2), r * sin(6.2831853 * u2));
+}
+float abar(float t){
+  const float s = .008; float f = cos(((t + s) / (1. + s)) * 1.5707963); float f0 = cos((s / (1. + s)) * 1.5707963);
+  return clamp((f * f) / (f0 * f0), 0., 1.);
+}
+vec3 tex(vec2 uv){ return texture(uTex, clamp(uv * uScale + uOff, 0.001, .999)).rgb; }
+void main(){
+  float k = floor(uStep * uSteps + 1e-4);
+  float st = k / uSteps;                 // дискретный шаг сэмплера
+  float t = 1. - st;                     // время диффузии
+  float a = abar(t);
+  float lvl = st < .56 ? 3. : (st < .76 ? 2. : (st < .9 ? 1. : 0.));   // латент 1/8 → 1/4 → 1/2 → 1/1
+  float blk = exp2(lvl) * uDpr;          // латентный пиксель: 8 → 4 → 2 → 1
+  vec2 cell = floor(gl_FragCoord.xy / blk);
+  vec2 uv = (cell + .5) * blk / uRes;
+  float br = st < 1. ? (.6 + 2.6 * t) * blk / uRes.x : 0.;
+  vec3 c = tex(uv) * .4 + .15 * (tex(uv + vec2(br, 0.)) + tex(uv - vec2(br, 0.)) + tex(uv + vec2(0., br)) + tex(uv - vec2(0., br)));
+  float l = dot(c, vec3(.2126, .7152, .0722));
+  c = mix(vec3(l), c, smoothstep(.42, .95, st));                   // цвет проявляется поздно
+  vec2 g1 = gauss(cell, uSeed + k); vec2 g2 = gauss(cell + 91.7, uSeed + k + .5);
+  vec3 eps = mix(vec3(g1.x), vec3(g1.x, g1.y, g2.x), .2) * .8;
+  vec3 x0 = c * 2. - 1.;
+  vec3 xt = sqrt(a) * x0 * (1. + 1.1 * (1. - a)) + sqrt(1. - a) * eps;   // нормированный латент: сигнал заметен сквозь шум, при ᾱ=1 — точный кадр
+  o = vec4(clamp(xt * .5 + .5, 0., 1.), 1.);
+}`;
+class Diffuser {
+  constructor(canvas) {
+    this.cv = canvas; this.tex = new Map(); this.key = '';
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'low-power' });
+    this.gl = gl;
+    if (!gl) return;
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { this.gl = null; return; }
+    this.p = p; gl.useProgram(p);
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(p, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    this.u = {}; for (const n of ['uTex', 'uStep', 'uSeed', 'uRes', 'uScale', 'uOff', 'uDpr', 'uSteps']) this.u[n] = gl.getUniformLocation(p, n);
+  }
+  texture(a) {
+    const gl = this.gl;
+    if (this.tex.has(a.id)) return this.tex.get(a.id);
+    if (!a.el) return null;
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, a.el);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const iw = a.el.naturalWidth || a.el.width, ih = a.el.naturalHeight || a.el.height;
+    const rec = { t, ar: iw / ih }; this.tex.set(a.id, rec); return rec;
+  }
+  resize(dpr) {
+    const w = Math.max(2, Math.round(this.cv.clientWidth * dpr)), h = Math.max(2, Math.round(this.cv.clientHeight * dpr));
+    if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; this.key = ''; }
+    this.dpr = dpr;
+  }
+  draw(a, step, seed) {
+    const gl = this.gl; if (!gl || !a) return false;
+    const k = Math.floor(step * CONFIG.diffusionSteps + 1e-4);
+    const key = a.id + '|' + k + '|' + seed + '|' + this.cv.width + 'x' + this.cv.height;
+    if (key === this.key) return true;
+    const rec = this.texture(a); if (!rec) return false;
+    this.key = key;
+    const W = this.cv.width, H = this.cv.height, ca = W / H;
+    let sx = 1, sy = 1; if (rec.ar > ca) sx = ca / rec.ar; else sy = rec.ar / ca;
+    const f = a.focus || [.5, .5];
+    gl.viewport(0, 0, W, H); gl.useProgram(this.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, rec.t);
+    gl.uniform1i(this.u.uTex, 0); gl.uniform1f(this.u.uStep, step); gl.uniform1f(this.u.uSeed, seed);
+    gl.uniform2f(this.u.uRes, W, H); gl.uniform2f(this.u.uScale, sx, sy);
+    gl.uniform2f(this.u.uOff, (1 - sx) * f[0], (1 - sy) * (1 - f[1]));
+    gl.uniform1f(this.u.uDpr, this.dpr || 1); gl.uniform1f(this.u.uSteps, CONFIG.diffusionSteps);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return true;
+  }
+}
+
+/* =====================================================================
+   6 · ОДОМЕТР (цифры-барабаны, только transform)
+   ===================================================================== */
+class Odo {
+  constructor(el) { this.el = el; this.val = null; this.tpl = null; this.d = []; }
+  set(str, animate) {
+    if (str === this.val) return;
+    this.val = str;
+    const tpl = str.replace(/\d/g, '#');
+    if (tpl !== this.tpl) {
+      this.tpl = tpl; this.el.textContent = ''; this.d = [];
+      for (const ch of str) {
+        if (/\d/.test(ch)) {
+          const w = document.createElement('span'); w.className = 'od-w';
+          const s = document.createElement('span'); s.className = 'od-s';
+          s.innerHTML = '0<br>1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9';
+          w.appendChild(s); this.el.appendChild(w); this.d.push({ s, cur: 0 });
+        } else { const c = document.createElement('span'); c.className = 'od-c'; c.textContent = ch; this.el.appendChild(c); }
+      }
+    }
+    const ds = [...str].filter(c => /\d/.test(c)).map(Number);
+    ds.forEach((v, i) => {
+      const D = this.d[i]; if (!D) return;
+      D.cur = v;
+      const y = -v * 10;
+      if (animate && window.gsap) gsap.to(D.s, { yPercent: y, duration: 0.36, ease: 'back.out(1.4)', delay: (ds.length - 1 - i) * 0.04, overwrite: true });
+      else if (window.gsap) { gsap.killTweensOf(D.s); gsap.set(D.s, { yPercent: y }); }
+      else D.s.style.transform = `translateY(${y}%)`;
+    });
+  }
+}
+document.head.insertAdjacentHTML('beforeend', '<style>.od-w{display:inline-block;height:1em;line-height:1;overflow:hidden;vertical-align:top}.od-s{display:block;will-change:transform}.od-c{display:inline-block;line-height:1;vertical-align:top}</style>');
+
+/* =====================================================================
+   7 · СОСТОЯНИЕ, ЧАСЫ, РЕЖИМЫ
+   ===================================================================== */
+const params = new URLSearchParams(location.search);
+const mqReduce = matchMedia('(prefers-reduced-motion: reduce)');
+const mqMobile = matchMedia('(max-width: 1099px)');
+const state = {
+  T: 0, frozen: false, reduced: mqReduce.matches || params.get('rm') === '1',
+  dev: params.get('dev') === '1', sound: false, mobile: mqMobile.matches,
+};
+if (state.reduced) document.documentElement.classList.add('rm');
+
+/* =====================================================================
+   8 · ЗАКАЗЫ И ПЛАНИРОВЩИК ЛИНИИ
+       Позиции на ленте — в модулях сетки (b). Скорость ленты: ½ модуля за такт.
+       Все движения кратны такту 120 мс. Планировщик детерминирован (для ?t=).
+   ===================================================================== */
+const V = 0.5;
+const NBP = { tray: 1.9, gates: [3.7, 5.2, 6.8, 8.3], store: 9.9 };
+const rideTicks = (b0, b1) => Math.max(1, Math.ceil(Math.abs(b1 - b0) / V - 1e-6));
+const PROMPT_1 = A['vid-moscow-night'].prompt;
+const PROMPT_2 = A['vid-salt-desert-i2v'].prompt;
+
+// История (склад до начала показа): заказы 0423–0426
+const HISTORY = [
+  { no: 422, model: 'seedance-2.5', asset: 'vid-dancer', dur: 5, res: '1080p' },
+  { no: 423, model: 'kling-image-3.0', asset: 'img-cherries', ires: '1K', fmt: '1:1' },
+  { no: 424, model: 'kling-image-3.0', asset: 'img-chrome', ires: '2K', fmt: '16:9' },
+  { no: 425, model: 'seedream-5.0', asset: 'img-salt-desert', ires: '2K', fmt: '4:5' },
+  { no: 426, model: 'kling-3.0', asset: 'vid-ceramics', dur: 5, res: '720p' },
+].map((o, i) => ({ ...o, prompt: A[o.asset].prompt, src: 'api', hist: true, p: { storeEnd: -10 + i, live: -10 + i, ejectEnd: -10 + i } }));
+
+// Сценарий входа: два заказа печатаются на станции «01 ВХОД»
+const SCRIPT = [
+  { no: 427, model: 'seedance-2.5', asset: 'vid-moscow-night', prompt: PROMPT_1, dur: 10, res: '1080p',
+    t: { start: 0.60, typeA: 0.72, typeB: 1.80, model: 1.32, dur: 1.56, res: 1.68, print: 2.04, printTicks: 8, press: 3.24, launch: 3.48 },
+    pre: { dur: 5, res: '720p' } },
+  { no: 429, model: 'kling-3.0', asset: 'vid-salt-desert-i2v', prompt: PROMPT_2, dur: 5, res: '720p', ref: 'img-salt-desert', refNo: 425,
+    t: { start: 3.96, ref: 4.08, typeA: 4.44, typeB: 5.28, model: 4.80, dur: 5.04, res: 5.28, print: 5.64, printTicks: 6, press: 6.48, launch: 6.72 },
+    pre: { model: 'seedance-2.5', dur: 10, res: '1080p' } },
+];
+// Фоновый поток (API-заказы): детерминированная очередь моделей
+const BG = [
+  { model: 'seedream-5.0', asset: 'img-brutalist', ires: '2K', at: 3.72, no: 428 },
+  { model: 'kling-image-3.0', asset: 'img-sparkling', ires: '2K', at: 6.96, no: 430 },
+  { model: 'seedance-2.5', asset: 'vid-dancer', dur: 5, res: '1080p' },
+  { model: 'seedream-5.0', asset: 'img-fisherman', ires: '2K' },
+  { model: 'kling-3.0', asset: 'vid-taiga-dawn', dur: 10, res: '720p' },
+  { model: 'kling-image-3.0', asset: 'img-cherries', ires: '1K' },
+  { model: 'seedream-5.0', asset: 'img-coupe', ires: '2K' },
+  { model: 'kling-3.0', asset: 'vid-perfume-gold', dur: 5, res: '1080p' },
+  { model: 'kling-image-3.0', asset: 'img-saxophonist', ires: '2K' },
+  { model: 'seedance-2.5', asset: 'vid-moscow-night', dur: 10, res: '720p' },
+  { model: 'seedream-5.0', asset: 'img-salt-desert', ires: '1K' },
+  { model: 'kling-image-3.0', asset: 'img-chrome', ires: '2K' },
+  { model: 'kling-3.0', asset: 'vid-ceramics', dur: 5, res: '720p' },
+];
+const BG_T0 = 9.24, BG_EVERY = 2.4;   // ≈ один заказ в 2–3 с
+
+let orders = [];       // активные/будущие заказы
+let segs = [];         // занятость ленты: {t0,t1,b0,b1,id}
+let gateBusy = [[], [], [], []];
+let bgK = 0, nextNo = 431;
+
+function normOrder(o) {
+  const a = A[o.asset];
+  o.kind = MODEL[o.model].kind;
+  if (o.kind === 'image') { o.fmt = o.fmt || aspectLabel(a); o.ires = o.ires || '2K'; }
+  else { o.dur = o.dur || 5; o.res = o.res || '720p'; }
+  o.cost = costOf(o);
+  o.mode = o.ref ? 'ТЕКСТ+РЕФ → ' + (o.kind === 'video' ? 'ВИДЕО' : 'ИЗОБР.') : 'ТЕКСТ → ' + (o.kind === 'video' ? 'ВИДЕО' : 'ИЗОБР.');
+  o.seed = hash(o.no) * 100;
+  return o;
+}
+HISTORY.forEach(normOrder);
+
+function planTimes(o, spawn, launchFixed, ejectDelay = 0) {
+  const g = GATE_OF[o.model], p = { spawn };
+  p.printEnd = spawn + o.printTicks * TK;
+  p.launch = launchFixed != null ? launchFixed : p.printEnd + TK;
+  p.arrive = p.launch + rideTicks(NBP.tray, NBP.gates[g]) * TK;
+  p.diff0 = p.arrive + 2 * TK;
+  p.diff1 = p.diff0 + 12 * TK;                 // 30 шагов за 1,44 с
+  if (o.kind === 'video') { p.tl1 = p.diff1 + 4 * TK; p.live = p.tl1; p.ready = p.live + 8 * TK; }
+  else { p.tl1 = p.diff1; p.live = null; p.ready = p.diff1 + 4 * TK; }
+  p.eject = p.ready + ejectDelay * TK;
+  p.ejectEnd = p.eject + 2 * TK;
+  p.store = p.ejectEnd + rideTicks(NBP.gates[g], NBP.store) * TK;
+  p.storeEnd = p.store + 2 * TK;
+  return p;
+}
+function segsOf(o, p) {
+  const g = GATE_OF[o.model], bg = NBP.gates[g];
+  return {
+    ticket: [
+      { t0: p.spawn, t1: p.launch, b0: NBP.tray, b1: NBP.tray },
+      { t0: p.launch, t1: p.arrive, b0: NBP.tray, b1: bg },
+      { t0: p.arrive, t1: p.arrive + TK, b0: bg, b1: bg },
+    ],
+    out: [
+      { t0: p.eject, t1: p.ejectEnd, b0: bg, b1: bg },
+      { t0: p.ejectEnd, t1: p.store, b0: bg, b1: NBP.store },
+      { t0: p.store, t1: p.store + TK, b0: NBP.store, b1: NBP.store },
+    ],
+  };
+}
+const posAt = (s, t) => s.t1 === s.t0 ? s.b0 : s.b0 + (s.b1 - s.b0) * (t - s.t0) / (s.t1 - s.t0);
+function segConflict(a, b) {
+  const t0 = Math.max(a.t0, b.t0), t1 = Math.min(a.t1, b.t1);
+  if (t1 <= t0) return false;
+  const d0 = posAt(a, t0) - posAt(b, t0), d1 = posAt(a, t1) - posAt(b, t1);
+  if (Math.sign(d0) !== Math.sign(d1)) return true;
+  return Math.min(Math.abs(d0), Math.abs(d1)) < 1.62;
+}
+const anyConflict = list => list.some(s => segs.some(z => segConflict(s, z)));
+const gateFree = (g, t0, t1) => gateBusy[g].every(([a, b]) => t1 + TK <= a || t0 >= b + TK);
+
+function commit(o, p) {
+  o.p = p;
+  const sg = segsOf(o, p);
+  sg.ticket.concat(sg.out).forEach(s => segs.push({ ...s, id: o.no }));
+  gateBusy[GATE_OF[o.model]].push([p.arrive, p.ejectEnd]);
+  orders.push(o);
+}
+function schedule(o, spawn0, launchFixed) {
+  normOrder(o);
+  const g = GATE_OF[o.model];
+  for (let s = spawn0, guard = 0; guard < 400; s += TK, guard++) {
+    for (let d = 0; d < 16; d++) {
+      const p = planTimes(o, s, launchFixed != null ? launchFixed + (s - spawn0) : null, d);
+      if (!gateFree(g, p.arrive, p.ejectEnd)) break;
+      const sg = segsOf(o, p);
+      if (anyConflict(sg.ticket)) break;
+      if (anyConflict(sg.out)) continue;
+      commit(o, p); return o;
+    }
+  }
+  commit(o, planTimes(o, spawn0, launchFixed)); return o;
+}
+function resetSchedule() {
+  orders = []; segs = []; gateBusy = [[], [], [], []]; bgK = 0; nextNo = 431;
+  for (const s of [...SCRIPT].reverse()) {   // поздний чек получает приоритет на ленте, ранний выход ждёт
+    const o = { no: s.no, model: s.model, asset: s.asset, prompt: s.prompt, dur: s.dur, res: s.res, ref: s.ref || null, src: 'web', printTicks: s.t.printTicks, script: s };
+    schedule(o, s.t.print, s.t.launch);
+  }
+  ensureScheduled(0);
+}
+function bgSpec(k) {
+  if (k < BG.length && BG[k].at != null) return { ...BG[k], at: BG[k].at };
+  const idx = 2 + ((k - 2) % (BG.length - 2));
+  return { ...BG[idx], at: BG_T0 + (k - 2) * BG_EVERY, no: undefined };
+}
+function ensureScheduled(T) {
+  while (true) {
+    const sp = bgSpec(bgK);
+    if (sp.at > T + 0.6) break;
+    const no = sp.no != null ? sp.no : nextNo++;
+    schedule({ no, model: sp.model, asset: sp.asset, dur: sp.dur, res: sp.res, ires: sp.ires, prompt: A[sp.asset].prompt, src: 'api', printTicks: 4 }, Math.max(sp.at, 0));
+    bgK++;
+  }
+  // уборка давно завершённых заказов (кроме тех, что ещё видны на складе)
+  if (orders.length > 60) {
+    const keep = new Set(storedList(T).slice(0, 8).map(o => o.no));
+    orders = orders.filter(o => o.p.storeEnd > T - 1 || keep.has(o.no));
+    segs = segs.filter(s => s.t1 > T - 1);
+    gateBusy = gateBusy.map(l => l.filter(([a, b]) => b > T - 1));
+  }
+}
+function storedList(T) {
+  return orders.filter(o => o.p.storeEnd <= T).concat(HISTORY).sort((a, b) => b.p.storeEnd - a.p.storeEnd);
+}
+
+/* =====================================================================
+   9 · DOM: шлюзы, склад, лента, чертёж
+   ===================================================================== */
+const sheet = $('#sheet'), lineBody = $('#lineBody');
+const gatesEl = $('#gates');
+const GATES = CONFIG.models.map((m, i) => {
+  const el = $('#tplGate').content.firstElementChild.cloneNode(true);
+  el.dataset.model = m.id;
+  el.setAttribute('aria-label', `Шлюз ${m.name}: ${m.kind === 'video' ? 'видео, от ' + m.priceRub + ' ₽ за секунду' : 'изображения, от ' + m.priceRub + ' ₽ за изображение'}. Выбрать модель`);
+  $('.g-no', el).textContent = '02.' + (i + 1);
+  $('.g-kind', el).textContent = m.kind === 'video' ? 'ВИДЕО' : 'ИЗОБР.';
+  $('.g-name .h', el).textContent = m.name;
+  $('.g-name .d', el).textContent = m.id;
+  $('.g-pr', el).innerHTML = m.kind === 'video' ? `от <b>${m.priceRub}${NB}₽</b>/с` : `от <b>${m.priceRub}${NB}₽</b>/изобр.`;
+  $('.g-cap', el).textContent = CONFIG.caps[m.id];
+  const tl = $('.g-tl', el); for (let k = 0; k < 30; k++) tl.appendChild(document.createElement('i'));
+  gatesEl.appendChild(el);
+  const g = {
+    el, m, led: $('.led', el), win: $('.g-win', el), frame: $('.g-frame', el), cv: $('.g-cv', el), vid: $('.g-vid', el),
+    standby: $('.g-standby', el), sbLbl: $('.g-standby span', el), idle: $('.g-idle', el), hudT: $('.g-hud.t', el), hudB: $('.g-hud.b', el), step: $('.g-step', el), noise: $('.g-noise', el), spec: $('.g-spec', el),
+    tl, cells: $$('i', tl), st: $('.g-st', el), price: $('.g-doc .p', el), last: {},
+  };
+  g.diff = new Diffuser(g.cv);
+  // клик по шлюзу выбирает модель на станции «01 ВХОД»
+  el.tabIndex = 0; el.setAttribute('role', 'button');
+  const pick = () => { takeOver(); comp.s.model = m.id; Sound.click(.6); renderComposer(state.T, false); };
+  el.addEventListener('click', pick);
+  el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+  return g;
+});
+
+// Сегменты параметров (из CONFIG — без хардкода в разметке)
+function segRadios(fs, name, values, label) {
+  for (const v of values) {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="radio" name="${name}" value="${v}"><span>${label(v)}</span>`;
+    fs.appendChild(l);
+  }
+}
+segRadios($('#segDur'), 'dur', CONFIG.pricing.video.durations, v => v === 15 ? `15${NB}С` : String(v));
+segRadios($('#segRes'), 'res', Object.keys(CONFIG.pricing.video.resolutions), v => upper(v));
+segRadios($('#segFmt'), 'fmt', CONFIG.pricing.image.formats, v => v);
+segRadios($('#segIres'), 'ires', Object.keys(CONFIG.pricing.image.resolutions), v => v);
+$('#segDur').setAttribute('aria-label', 'Длительность, секунд');
+$('#segRes').setAttribute('aria-label', 'Разрешение видео');
+$('#segFmt').setAttribute('aria-label', 'Формат изображения');
+$('#segIres').setAttribute('aria-label', 'Разрешение изображения');
+
+// Склад: полка изображений
+const rackEl = $('#sRack');
+const RACK = [0, 1, 2].map(() => {
+  const f = document.createElement('figure'); f.className = 's-th';
+  f.innerHTML = '<img alt=""><figcaption><span></span><b></b></figcaption>';
+  rackEl.appendChild(f);
+  return { f, img: $('img', f), cap: $('figcaption span', f), pr: $('figcaption b', f), cur: null };
+});
+const SL = [$('#sL0'), $('#sL1')].map(el => ({ el, img: $('img', el), vid: $('video', el), cur: null }));
+const sRcpt = $('#sRcpt'), sDim = $('#sDim'), sMain = $('#sMain');
+
+// Билеты (чеки) на ленте — пул по номеру заказа
+const tokensEl = $('#tokens');
+const TOK = new Map();
+function ticketHTML(o, done) {
+  const m = MODEL[o.model];
+  const l1 = `№${NB}${pad4(o.no)} · ${o.mode}`;
+  const l2 = `${upper(m.name)} · ${specOf(o)}`;
+  return `<div class="tk-paper">
+    <div class="hm"><p class="tk-l1">${l1}</p><p class="tk-l2">${l2}</p></div>
+    <div class="js"><p class="tk-l1">{"id":"gen_${pad4(o.no)}",</p><p class="tk-l2">&nbsp;"model":"${m.id}",</p></div>
+    <p class="tk-l3 hm"><span class="q">ДО ЗАПУСКА</span><span class="ok">ГОТОВО ✓</span><b>${fmtRub(o.cost, true)}</b></p>
+    <p class="tk-l3 js"><span>&nbsp;"cost_rub":<b>${fmtNum2(o.cost)}</b>}</span><span class="ok">✓</span></p>
+  </div><div class="tk-thumb"><img alt="" src="${imgURL(o.asset)}"></div><span class="tk-m">${pad4(o.no)}<i> ✓</i></span>`;
+}
+function tokenFor(o) {
+  let t = TOK.get(o.no);
+  if (!t) {
+    const el = document.createElement('div'); el.className = 'tk';
+    el.innerHTML = ticketHTML(o);
+    tokensEl.appendChild(el);
+    t = { el, o, vis: false, x: null, y: null, cls: '' };
+    TOK.set(o.no, t);
+  }
+  return t;
+}
+
+// Геометрия: якоря ленты в px (desktop — по горизонтали, mobile — вертикальный рельс)
+const geo = { tray: { x: 0, y: 0 }, gates: [], store: { x: 0, y: 0 }, riseG: 90, riseS: 90, tkW: 152, tkH: 58, pxPerB: 60, beltY: 0 };
+function offIn(el, anc) { let x = 0, y = 0, e = el; while (e && e !== anc) { x += e.offsetLeft; y += e.offsetTop; e = e.offsetParent; } return { x, y }; }
+function measure() {
+  state.mobile = mqMobile.matches;
+  const rem = geo.rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const tray = $('#tray'), head = $('#pHead'), belt = $('#belt');
+  const tk = tokenFor(orders[0] || normOrder({ no: 0, model: 'seedance-2.5', asset: 'vid-moscow-night', dur: 10, res: '1080p' })).el;
+  geo.tkW = tk.offsetWidth || 15.2 * rem; geo.tkH = tk.offsetHeight || 5.8 * rem;
+  const to = offIn(tray, lineBody), bo = offIn(belt, lineBody);
+  if (!state.mobile) {
+    const bandTop = bo.y + 1.4 * rem, bandH = belt.offsetHeight - 1.4 * rem;
+    geo.beltY = bandTop + bandH - geo.tkH - 0.55 * rem;
+    geo.tray = { x: to.x + head.offsetWidth + 0.6 * rem + geo.tkW / 2, y: geo.beltY };
+    geo.gates = GATES.map(g => { const o = offIn(g.el, lineBody); return { x: o.x + g.el.offsetWidth / 2, y: geo.beltY }; });
+    const so = offIn($('#store'), lineBody);
+    geo.store = { x: so.x + 7.5 * rem + 0 * geo.tkW, y: geo.beltY };
+    geo.riseG = geo.beltY - (offIn(GATES[0].el, lineBody).y + GATES[0].el.offsetHeight) + geo.tkH + 1.2 * rem;
+    geo.riseS = geo.riseG;
+  } else {
+    const railX = bo.x + belt.offsetWidth / 2;
+    geo.tray = { x: to.x + head.offsetWidth + 1.2 * rem + geo.tkW / 2, y: to.y + (tray.offsetHeight - geo.tkH) / 2 };
+    geo.rail = railX;
+    geo.trayRail = { x: railX, y: to.y + tray.offsetHeight / 2 };
+    geo.gates = GATES.map(g => { const o = offIn(g.el, lineBody); return { x: railX, y: o.y + g.el.offsetHeight / 2 }; });
+    const so = offIn($('#store'), lineBody);
+    geo.store = { x: railX, y: so.y + 4 * rem };
+  }
+  geo.pxPerB = (geo.gates[3].x - geo.gates[0].x) / (NBP.gates[3] - NBP.gates[0]) || 60;
+  const slot = $('#pSlot');   // щель принтера: из неё чек выходит вверх
+  slot.style.left = (geo.tray.x - to.x - geo.tkW / 2 - 0.3 * rem) + 'px';
+  slot.style.width = (geo.tkW + 0.6 * rem) + 'px';
+  slot.style.top = (geo.tray.y - to.y + geo.tkH - 0.1 * rem) + 'px';
+  GATES.forEach(g => g.diff.resize(Math.min(2, window.devicePixelRatio || 1)));
+  buildBelt(rem);
+  buildDrawing(rem);
+}
+// b (модули) → точка на экране, кусочно-линейно по якорям
+function anchorList() {
+  return [{ b: NBP.tray, p: state.mobile ? geo.trayRail : geo.tray }, ...NBP.gates.map((b, i) => ({ b, p: geo.gates[i] })), { b: NBP.store, p: geo.store }];
+}
+function bToXY(b) {
+  const L = anchorList();
+  if (b <= L[0].b) return { ...L[0].p };
+  for (let i = 1; i < L.length; i++) if (b <= L[i].b) {
+    const a = L[i - 1], c = L[i], f = (b - a.b) / (c.b - a.b);
+    return { x: a.p.x + (c.p.x - a.p.x) * f, y: a.p.y + (c.p.y - a.p.y) * f };
+  }
+  return { ...L[L.length - 1].p };
+}
+
+function buildBelt(rem) {
+  const strip = $('#beltStrip');
+  const W = state.mobile ? (strip.parentElement.clientWidth) : strip.parentElement.clientWidth * 2;
+  const H = state.mobile ? strip.parentElement.clientHeight * 2 : strip.parentElement.clientHeight;
+  const step = geo.pxPerB * V / 3;     // насечки: три на шаг ленты
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  if (!state.mobile) {
+    for (let x = 0, i = 0; x < W; x += step, i++) {
+      const maj = i % 6 === 0;
+      s += `<line x1="${x}" y1="0" x2="${x}" y2="${maj ? H * .26 : H * .13}" class="${maj ? 'm' : ''}"/><line x1="${x}" y1="${H}" x2="${x}" y2="${H - (maj ? H * .26 : H * .13)}" class="${maj ? 'm' : ''}"/>`;
+      if (maj) s += `<path d="M${x + step * 2.6} ${H * .5 - 3} l5 3 l-5 3z"/>`;
+    }
+  } else {
+    const st = 1.2 * rem;
+    for (let y = 0, i = 0; y < H; y += st, i++) {
+      const maj = i % 5 === 0;
+      s += `<line x1="0" y1="${y}" x2="${maj ? W * .5 : W * .28}" y2="${y}" class="${maj ? 'm' : ''}"/>`;
+      if (maj) s += `<path d="M${W * .62} ${y + st * 2} l3 5 l3 -5z"/>`;
+    }
+  }
+  strip.innerHTML = s + '</svg>';
+  geo.beltPeriod = state.mobile ? 6 * rem : step * 6;
+}
+
+function buildDrawing(rem) {
+  const svg = $('#drawing');
+  const W = sheet.clientWidth, H = sheet.clientHeight;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const colsEl = $('#cols');
+  const cols = $$('i', colsEl).filter(c => c.offsetWidth > 0).map(c => ({ x: colsEl.offsetLeft + c.offsetLeft, w: c.offsetWidth }));
+  const nav = $('.nav'), ruler = $('.ruler'), line = $('.line'), trust = $('.trust');
+  const yNav = offIn(nav, sheet).y + nav.offsetHeight, yRul = offIn(ruler, sheet).y + ruler.offsetHeight;
+  const yLine = offIn(line, sheet).y, yTrust = offIn(trust, sheet).y, yEnd = state.mobile ? H - 1 : yTrust + trust.offsetHeight - 1;
+  const L = [];
+  const x0 = cols[0].x, x1 = cols[cols.length - 1].x + cols[cols.length - 1].w;
+  const gut = cols.length > 1 ? cols[1].x - (cols[0].x + cols[0].w) : 0;
+  // горизонтали (листы и границы зон)
+  [[yNav, .0], [yRul, .05], [yLine - 4, .2], [yTrust, .3]].forEach(([y, i]) => L.push(`<line class="h" x1="${x0 - 2.6 * rem}" y1="${y}" x2="${x1 + 2.6 * rem}" y2="${y}" style="--i:${i}"/>`));
+  // вертикали модульной сетки
+  const xs = [x0 - gut / 2, ...cols.slice(1).map(c => c.x - gut / 2), x1 + gut / 2];
+  xs.forEach((x, k) => L.push(`<line class="v" x1="${x}" y1="${yRul}" x2="${x}" y2="${yEnd}" style="--i:${.08 + k * .02}"/>`));
+  // шкала линейки A1…A12: основные и малые засечки
+  cols.forEach(c => {
+    L.push(`<line class="tk-maj" x1="${c.x}" y1="${yRul - .9 * rem}" x2="${c.x}" y2="${yRul}"/>`);
+    for (let q = 1; q < 4; q++) { const x = c.x + c.w * q / 4; L.push(`<line class="tk-min" x1="${x}" y1="${yRul - (q === 2 ? .55 : .35) * rem}" x2="${x}" y2="${yRul}"/>`); }
+  });
+  // левая вертикальная линейка: засечки каждые 10 px листа, подписи каждые 100
+  if (!state.mobile) {
+    const unit = rem;  // 1rem = 10 px листа
+    const xr = x0 - 2.2 * rem;
+    for (let k = Math.ceil(yNav / unit), y = k * unit; y < yEnd; k++, y += unit) {
+      const maj = k % 10 === 0;
+      L.push(`<line class="${maj ? 'tk-maj' : 'tk-min'}" x1="${xr}" y1="${y}" x2="${xr + (maj ? .9 : (k % 5 === 0 ? .6 : .35)) * rem}" y2="${y}"/>`);
+      if (maj) L.push(`<text x="${xr - .2 * rem}" y="${y - .3 * rem}" text-anchor="start">${k * 10}</text>`);
+    }
+    // приводочные метки по углам рабочего поля
+    const cm = (x, y, sx, sy) => `<line class="crop" x1="${x}" y1="${y}" x2="${x + sx * 1.2 * rem}" y2="${y}"/><line class="crop" x1="${x}" y1="${y}" x2="${x}" y2="${y + sy * 1.2 * rem}"/>`;
+    L.push(cm(x0 - gut / 2, yRul, 1, 1), cm(x1 + gut / 2, yRul, -1, 1), cm(x0 - gut / 2, yTrust, 1, -1), cm(x1 + gut / 2, yTrust, -1, -1));
+  }
+  svg.innerHTML = L.join('');
+}
+
+/* =====================================================================
+   10 · СТАНЦИЯ 01 ВХОД (строка генерации)
+   ===================================================================== */
+const form = $('#composer'), promptEl = $('#prompt'), cNo = $('#cNo'), cMode = $('#cMode');
+const odPrice = new Odo($('#odPrice')), odCredits = new Odo($('#odCredits'));
+const comp = { user: false, s: null };   // s — состояние при ручном управлении
+function compDefault() { return { no: 427, prompt: '', model: null, dur: 5, res: '720p', fmt: '16:9', ires: '2K', ref: null, refUser: null, refNo: null, refDrop: 1, pressed: null, keyDown: null, status: '' }; }
+
+// Сценарное состояние станции в момент T (детерминированно)
+function scriptedComp(T) {
+  const c = compDefault();
+  const [s1, s2] = SCRIPT;
+  const typed = (s, T) => s.prompt.slice(0, Math.round(clamp((T - s.t.typeA) / (s.t.typeB - s.t.typeA)) * s.prompt.length));
+  if (T < s2.t.start) {
+    c.no = s1.no; c.prompt = typed(s1, T);
+    if (T >= s1.t.model) c.model = s1.model;
+    c.dur = T >= s1.t.dur ? s1.dur : s1.pre.dur; c.res = T >= s1.t.res ? s1.res : s1.pre.res;
+    c.keyDown = [[s1.t.model, 'm:' + s1.model], [s1.t.dur, 'dur:' + s1.dur], [s1.t.res, 'res:' + s1.res]].find(([t]) => T >= t && T < t + TK)?.[1] || null;
+    c.pressed = T >= s1.t.press && T < s1.t.launch ? 'down' : null;
+    c.status = T >= s1.t.launch ? 'launched' : (T >= s1.t.print ? 'print' : '');
+  } else {
+    c.no = s2.no; c.prompt = typed(s2, T);
+    c.model = T >= s2.t.model ? s2.model : s2.pre.model;
+    c.dur = T >= s2.t.dur ? s2.dur : s2.pre.dur; c.res = T >= s2.t.res ? s2.res : s2.pre.res;
+    if (T >= s2.t.ref) { c.ref = s2.ref; c.refNo = s2.refNo; c.refDrop = stepped(s2.t.ref, 3, T); }
+    c.keyDown = [[s2.t.model, 'm:' + s2.model], [s2.t.dur, 'dur:' + s2.dur], [s2.t.res, 'res:' + s2.res]].find(([t]) => T >= t && T < t + TK)?.[1] || null;
+    c.pressed = T >= s2.t.press && T < s2.t.launch ? 'down' : null;
+    if (T >= s2.t.launch + 2 * TK) { c.no = Math.max(431, ...orders.filter(o => o.p.spawn <= T).map(o => o.no + 1)); c.status = 'ready'; }
+    else c.status = T >= s2.t.print ? 'print' : '';
+  }
+  if (T < s1.t.start) c.no = s1.no;
+  return c;
+}
+let compPrev = null;
+function setRadio(name, v) { const r = form.querySelector(`input[name="${name}"][value="${v}"]`); if (r && !r.checked) r.checked = true; if (!v) form.querySelectorAll(`input[name="${name}"]`).forEach(i => i.checked = false); }
+function reducedComp() {
+  const c = compDefault();
+  Object.assign(c, { no: nextFreeNo(), prompt: PROMPT_1, model: 'seedance-2.5', dur: 10, res: '1080p', status: 'ready' });
+  return c;
+}
+function slotOff(off) { const sl = $('#refSlot'); sl.classList.toggle('off', off); $('#refBtn').disabled = off; $('#refBtn').setAttribute('aria-label', off ? 'Референс доступен для видео-моделей' : 'Добавить референс'); }
+function renderComposer(T, instant) {
+  const c = comp.user ? comp.s : (state.reduced ? reducedComp() : scriptedComp(T));
+  const P = compPrev || {};
+  if (c.no !== P.no) cNo.textContent = pad4(c.no);
+  if (!comp.user && promptEl.value !== c.prompt) promptEl.value = c.prompt;
+  if (c.model !== P.model) setRadio('model', c.model);
+  if (c.dur !== P.dur) setRadio('dur', String(c.dur));
+  if (c.res !== P.res) setRadio('res', c.res);
+  if (c.fmt !== P.fmt) setRadio('fmt', c.fmt);
+  if (c.ires !== P.ires) setRadio('ires', c.ires);
+  const kind = c.model ? MODEL[c.model].kind : 'video';
+  $('#cParams').dataset.kind = kind;
+  const hasRef = !!(c.ref || c.refUser) && kind === 'video';   // референс — только для видео-шлюзов (ТЕКСТ · ФОТО → ВИДЕО)
+  slotOff(kind !== 'video');
+  const mode = (hasRef ? 'ТЕКСТ+РЕФ → ' : 'ТЕКСТ → ') + (kind === 'video' ? 'ВИДЕО' : 'ИЗОБР.');
+  if (cMode.textContent !== mode) cMode.textContent = mode;
+  // референс падает в слот (пружинная защёлка)
+  const slot = $('#refSlot');
+  slot.classList.toggle('has', hasRef); slot.classList.toggle('user', !!c.refUser && hasRef);
+  if (hasRef) {
+    const src = c.refUser || imgURL(c.ref);
+    if ($('#refPic').getAttribute('src') !== src) $('#refPic').setAttribute('src', src);
+    $('#refTag').textContent = c.refUser ? 'ФОТО' : `№${NB}${pad4(c.refNo)}`;
+    $('#refImg').style.transform = `translateY(${(1 - c.refDrop) * -110}%)`;
+  }
+  // нажатия клавиш
+  $$('.key', form).forEach(k => k.classList.toggle('down', c.keyDown === 'm:' + k.dataset.m));
+  $$('.seg label', form).forEach(l => { const i = $('input', l); l.classList.toggle('down', c.keyDown === i.name + ':' + i.value); });
+  $('#launch').classList.toggle('down', c.pressed === 'down');
+  // цена до запуска — одометр
+  const priceKey = c.model ? [c.model, c.dur, c.res, c.ires].join('|') : '';
+  if (priceKey !== P.priceKey) {
+    if (c.model) {
+      const o = { model: c.model, dur: c.dur, res: c.res, ires: c.ires };
+      const v = costOf(o), m = MODEL[c.model];
+      odPrice.set(fmtRub(v), !instant && !state.reduced);
+      $('#srPrice').textContent = 'Стоимость: ' + fmtRub(v, true);
+      $('#formula').textContent = m.kind === 'video'
+        ? `${m.priceRub}${NB}₽/С × ${c.dur}${NB}С × ${fmtK(CONFIG.pricing.video.resolutions[c.res])} = ${fmtRub(v, true)}`
+        : `${m.priceRub}${NB}₽ × ${fmtK(CONFIG.pricing.image.resolutions[c.ires])} (${c.ires}) = ${fmtRub(v, true)}`;
+    } else { odPrice.set('—', false); $('#formula').textContent = 'ВЫБЕРИТЕ МОДЕЛЬ'; $('#srPrice').textContent = ''; }
+  }
+  // целевой шлюз
+  GATES.forEach(g => g.el.classList.toggle('is-target', g.m.id === c.model));
+  compPrev = { ...c, priceKey };
+  updateCode(c, instant);
+}
+// Ручное управление: пользователь перехватывает станцию
+function takeOver() {
+  if (comp.user) return;
+  const c = scriptedComp(state.T);
+  comp.s = { ...c, keyDown: null, pressed: null, refDrop: 1, model: c.model || 'seedance-2.5', status: 'ready' };
+  if (c.status === 'launched' || c.status === 'ready' || c.status === 'print') comp.s.no = nextFreeNo();
+  comp.user = true;
+}
+function nextFreeNo() { return Math.max(nextNo, ...orders.map(o => o.no + 1), 431); }
+promptEl.addEventListener('focus', takeOver);
+promptEl.addEventListener('input', () => { takeOver(); comp.s.prompt = promptEl.value; });
+promptEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (form.requestSubmit) form.requestSubmit(); else form.dispatchEvent(new Event('submit', { cancelable: true })); } });
+form.addEventListener('change', e => {
+  const t = e.target; if (!t.name) return;
+  takeOver();
+  if (t.name === 'model') comp.s.model = t.value;
+  if (t.name === 'dur') comp.s.dur = +t.value;
+  if (t.name === 'res') comp.s.res = t.value;
+  if (t.name === 'fmt') comp.s.fmt = t.value;
+  if (t.name === 'ires') comp.s.ires = t.value;
+  Sound.click(.5);
+  renderComposer(state.T, false);
+});
+form.addEventListener('pointerdown', e => { if (e.target.closest('.key,.seg,.launch')) takeOver(); });
+$('#refBtn').addEventListener('click', () => $('#refFile').click());
+$('#refFile').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  takeOver(); comp.s.refUser = URL.createObjectURL(f); comp.s.ref = null; renderComposer(state.T, false);
+});
+$('#refX').addEventListener('click', () => { takeOver(); comp.s.refUser = null; comp.s.ref = null; renderComposer(state.T, false); });
+$('#refSlot').addEventListener('dragover', e => e.preventDefault());
+$('#refSlot').addEventListener('drop', e => {
+  e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) { takeOver(); comp.s.refUser = URL.createObjectURL(f); renderComposer(state.T, false); }
+});
+form.addEventListener('submit', e => {
+  e.preventDefault(); takeOver();
+  const c = comp.s;
+  const pool = Object.values(A).filter(a => a.model === c.model);
+  let asset;
+  if (c.model === 'kling-3.0' && (c.ref || c.refUser)) asset = 'vid-salt-desert-i2v';
+  else if (MODEL[c.model].kind === 'image') asset = (pool.find(a => aspectLabel(a) === c.fmt) || pool[(c.no) % pool.length]).id;
+  else asset = pool[c.no % pool.length].id;
+  const isV = MODEL[c.model].kind === 'video';
+  const o = { no: c.no, model: c.model, asset, prompt: c.prompt || A[asset].prompt, dur: c.dur, res: c.res, ires: c.ires, fmt: isV ? undefined : c.fmt, ref: isV ? (c.ref || (c.refUser ? 'user' : null)) : null, src: 'web', printTicks: 6 };
+  if (o.ref === 'user') o.ref = 'img-salt-desert';
+  nextNo = Math.max(nextNo, c.no + 1);
+  if (state.reduced) { normOrder(o); o.p = planTimes(o, state.T - 12); orders.push(o); renderAll(state.T, true); }
+  else schedule(o, Math.ceil(state.T / TK) * TK);
+  comp.s.no = nextFreeNo();
+  const L = $('#launch'); L.classList.add('down'); setTimeout(() => L.classList.remove('down'), 120);
+  Sound.click(1);
+  renderComposer(state.T, false);
+});
+
+/* =====================================================================
+   11 · РЕЖИМ «РАЗРАБОТЧИКУ»: переворот станции, curl, перебор model
+   ===================================================================== */
+const codeEl = $('#code');
+let codeKey = '', codeModelIdx = -1, codeText = '';
+const MODEL_IDS = CONFIG.models.map(m => m.id);
+function curlParts(c, modelId) {
+  const m = MODEL[c.model || 'seedance-2.5'];
+  const pr = (c.prompt || PROMPT_1);
+  const short = pr.length > 24 ? pr.slice(0, 23).trimEnd() + '…' : pr;
+  const isV = m.kind === 'video';
+  const cm = MODEL[modelId];
+  // стоимость для выбранного id при тех же параметрах (720p ≈ 1K, 1080p ≈ 2K)
+  const o = cm.kind === 'video'
+    ? { model: modelId, dur: isV ? c.dur : 5, res: isV ? c.res : (c.ires === '2K' ? '1080p' : '720p') }
+    : { model: modelId, ires: isV ? (c.res === '1080p' ? '2K' : '1K') : c.ires };
+  return { short, isV, cost: costOf(o) };
+}
+function updateCode(c, instant) {
+  const idx = state.dev ? Math.floor(state.T / (TK * 12)) % 4 : MODEL_IDS.indexOf(c.model || 'seedance-2.5');
+  const modelId = MODEL_IDS[Math.max(0, idx)];
+  const { short, isV, cost } = curlParts(c, modelId);
+  const key = [c.no, short, isV, c.dur, c.res, c.fmt, c.ires].join('|');
+  const H = CONFIG.apiHost;
+  if (key !== codeKey) {
+    codeKey = key;
+    const p1 = isV ? `    <span class="t-k">"duration"</span>: <span class="t-n">${c.dur}</span>,\n    <span class="t-k">"resolution"</span>: <span class="t-s">"${c.res}"</span>`
+                   : `    <span class="t-k">"format"</span>: <span class="t-s">"${c.fmt}"</span>,\n    <span class="t-k">"resolution"</span>: <span class="t-s">"${c.ires}"</span>`;
+    codeEl.innerHTML =
+`<span class="t-f">curl</span> https://${H}/v1/generations \\
+  <span class="t-f">-H</span> <span class="t-s">"Authorization: Bearer $SINTEZ_KEY"</span> \\
+  <span class="t-f">-d</span> '{
+    <span class="t-k">"model"</span>: <span class="t-m" id="cModel"></span>
+    <span class="t-k">"prompt"</span>: <span class="t-s">"${short}"</span>,
+${p1}
+  }'
+<span class="t-c"># → {"id":"gen_${pad4(c.no)}","status":"queued",</span>
+<span class="t-c">#    </span><span class="t-c">"cost_rub":</span><span class="t-cost" id="cCost"></span><span class="t-c">}</span>`;
+    codeModelIdx = -1;
+  }
+  if (idx !== codeModelIdx || $('#cCost').textContent !== fmtNum2(cost)) {
+    const prevId = codeModelIdx >= 0 ? MODEL_IDS[codeModelIdx] : null;
+    codeModelIdx = idx;
+    flapTo($('#cModel'), `"${modelId}",`, prevId && !instant && !state.reduced && !state.frozen);
+    $('#cCost').textContent = fmtNum2(cost);
+  }
+  codeText = `curl https://${H}/v1/generations \\\n  -H "Authorization: Bearer $SINTEZ_KEY" \\\n  -d '{"model":"${modelId}","prompt":"${(c.prompt || PROMPT_1).replace(/"/g, '\\"')}",` +
+    (isV ? `"duration":${c.dur},"resolution":"${c.res}"}'` : `"format":"${c.fmt}","resolution":"${c.ires}"}'`) +
+    `\n# → {"id":"gen_${pad4(c.no)}","status":"queued","cost_rub":${fmtNum2(cost)}}`;
+}
+// split-flap: каждый символ перелистывается через 3 случайных знака и встаёт на место
+const FLAP = 'abcdefgiklmnorstv-.0123456789';
+function flapTo(el, str, animate) {
+  const W = 17;
+  const target = str.padEnd(W, ' ');
+  if (!el.children.length) for (let i = 0; i < W; i++) el.appendChild(document.createElement('i'));
+  [...el.children].forEach((ch, i) => {
+    clearTimeout(ch._t);
+    if (!animate) { ch.textContent = target[i]; return; }
+    let n = 0; const run = () => {
+      if (n < 3) { ch.textContent = FLAP[Math.floor(Math.random() * FLAP.length)]; n++; ch._t = setTimeout(run, 40); }
+      else ch.textContent = target[i];
+    };
+    ch._t = setTimeout(run, i * 18);
+  });
+  if (animate) Sound.click(.35);
+}
+$('#copy').addEventListener('click', () => {
+  const b = $('#copy');
+  const done = ok => { b.textContent = ok ? 'СКОПИРОВАНО ✓' : 'CTRL+C'; setTimeout(() => b.textContent = 'КОПИРОВАТЬ', 1440); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(codeText).then(() => done(true), () => done(false));
+  else done(false);
+});
+let flipTl = null;
+function setDev(on, instant) {
+  state.dev = on;
+  document.body.classList.toggle('is-dev', on);
+  const flip = $('#flip');
+  form.inert = on; $('#dev').inert = !on;
+  $('#dev').setAttribute('aria-hidden', on ? 'false' : 'true'); form.setAttribute('aria-hidden', on ? 'true' : 'false');
+  if (flipTl) flipTl.kill();
+  if (instant || state.reduced || !window.gsap) { if (window.gsap) gsap.set(flip, { rotationX: on ? -180 : 0 }); else flip.style.transform = `rotateX(${on ? -180 : 0}deg)`; }
+  else {
+    // механический переворот: разгон до ребра, затем пружинная защёлка
+    flipTl = gsap.timeline()
+      .to(flip, { rotationX: on ? -90 : -90, duration: 0.18, ease: 'power2.in' })
+      .to(flip, { rotationX: on ? -180 : 0, duration: 0.3, ease: 'back.out(2.2)' });
+    Sound.click(.8);
+  }
+  codeKey = '';
+  renderComposer(state.T, true);
+}
+$$('input[name="mode"]').forEach(r => r.addEventListener('change', () => setDev(r.value === 'dev' && r.checked)));
+$$('#ctaApi, .nav-links a[href="#api"]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); const r = $('input[name="mode"][value="dev"]'); r.checked = true; setDev(true); $('#copy').focus({ preventScroll: true }); }));
+
+/* =====================================================================
+   12 · ЗВУК: тихие механические щелчки (WebAudio), по умолчанию выключен
+   ===================================================================== */
+const Sound = {
+  ctx: null, last: 0,
+  click(vol = 1) {
+    if (!state.sound || !this.ctx || state.frozen) return;
+    const t = this.ctx.currentTime; if (t - this.last < 0.03) return; this.last = t;
+    const len = 0.012, buf = this.ctx.createBuffer(1, Math.ceil(this.ctx.sampleRate * len), this.ctx.sampleRate);
+    const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2400 + Math.random() * 900; f.Q.value = 2.2;
+    const g = this.ctx.createGain(); g.gain.value = 0.11 * vol;
+    src.connect(f).connect(g).connect(this.ctx.destination); src.start(t);
+  },
+};
+$('#snd').addEventListener('click', () => {
+  state.sound = !state.sound;
+  if (state.sound && !Sound.ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) Sound.ctx = new AC(); }
+  if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
+  $('#snd').setAttribute('aria-pressed', String(state.sound));
+  $('#sndLbl').textContent = state.sound ? 'ВКЛ' : 'ВЫКЛ';
+  $('#snd .led').classList.toggle('on', state.sound);
+  Sound.click(1);
+});
+
+/* =====================================================================
+   13 · РЕНДЕР ЛИНИИ В МОМЕНТ T
+   ===================================================================== */
+const VIDS = new Set();
+function wantVideo(el, assetId, t0, T, show) {
+  const a = A[assetId];
+  el._want = { show: !!(show && a && a.vurl && !state.reduced), id: assetId, t0, T };
+  VIDS.add(el);
+}
+function syncVideos() {
+  const seeks = [];
+  for (const el of VIDS) {
+    const w = el._want; if (!w) continue;
+    if (!w.show) { if (!el.paused) el.pause(); el.classList.remove('on'); continue; }
+    const a = A[w.id];
+    if (el.dataset.a !== w.id) { el.src = a.vurl; el.dataset.a = w.id; }
+    const dur = (el.duration && isFinite(el.duration)) ? el.duration : a.dur;
+    const target = (((w.T - w.t0) % dur) + dur) % dur;
+    if (state.frozen) {
+      if (!el.paused) el.pause();
+      if (Math.abs(el.currentTime - target) > 0.03 || el.readyState < 2) {
+        seeks.push(new Promise(r => {
+          const done = () => { el.removeEventListener('seeked', done); r(); };
+          el.addEventListener('seeked', done); setTimeout(done, 2500);
+          const go = () => { try { el.currentTime = target; } catch (e) { r(); } };
+          if (el.readyState >= 1) go(); else el.addEventListener('loadedmetadata', go, { once: true });
+        }));
+      }
+    } else if (el.paused) {
+      try { if (el.readyState >= 1) el.currentTime = target; } catch (e) {}
+      const p = el.play(); if (p && p.catch) p.catch(() => {});
+    }
+    el.classList.toggle('on', el.readyState >= 2);
+    if (el.readyState < 2 && !el._lw) { el._lw = true; el.addEventListener('loadeddata', () => { el._lw = false; if (el._want && el._want.show) el.classList.add('on'); }, { once: true }); }
+  }
+  return Promise.all(seeks);
+}
+
+function gateRender(g, i, T) {
+  const o = orders.find(o => GATE_OF[o.model] === i && o.p.arrive <= T && T < o.p.ejectEnd);
+  let led = 'idle';
+  const cal = 0.12 * (i + 1);
+  if (T < cal) led = 'off'; else if (T < cal + TK) led = 'cal';
+  let sb = true, cvOn = false, vOn = false, hud = false, shut = 0, doc = 'СВОБОДЕН', price = '', priceOn = false, cells = 0, frames = false;
+  let hudA = '', hudB = '', sbTxt = 'ОЖИДАНИЕ';
+  // последний выпуск шлюза — «призрак» на экране ожидания
+  const lastDone = orders.concat(HISTORY).filter(x => GATE_OF[x.model] === i && (x.hist || x.p.ejectEnd <= T)).sort((a, b) => (b.p.ejectEnd ?? b.p.storeEnd) - (a.p.ejectEnd ?? a.p.storeEnd))[0];
+  if (state.reduced) {
+    // статичная собранная линия: каждый шлюз показывает готовый кадр
+    const src = o || lastDone;
+    const asset = src ? src.asset : Object.values(A).find(a => a.model === g.m.id).id;
+    g.diff.draw(A[asset], 1, 0); cvOn = true; sb = false; led = 'done'; hud = true;
+    hudA = 'ШАГ 30/30'; hudB = 'ГОТОВО ✓'; cells = 30;
+    doc = src ? `№${NB}${pad4(src.no)} ✓` : '';
+    if (src) { price = fmtRub(src.cost, true); priceOn = true; }
+    g.spec.textContent = src ? `${aspectLabel(A[asset])} · ${src.kind === 'video' ? upper(src.res) : src.ires}` : '';
+  } else if (o) {
+    const p = o.p; led = 'run';
+    g.spec.textContent = `${aspectLabel(A[o.asset])} · ${o.kind === 'video' ? upper(o.res) : o.ires}`;
+    price = fmtRub(o.cost, true);
+    doc = `№${NB}${pad4(o.no)}`;
+    if (T < p.diff0) { // приём чека
+      sbTxt = 'ПРИЁМ ЗАКАЗА';
+      priceOn = stepped(p.arrive, 2, T) > .5;
+    } else {
+      priceOn = true; sb = false; cvOn = true; hud = true;
+      const u = clamp((T - p.diff0) / (p.diff1 - p.diff0));
+      const k = Math.floor(u * CONFIG.diffusionSteps + 1e-4);
+      const tt = 1 - k / CONFIG.diffusionSteps, s = .008;
+      const f = Math.cos(((tt + s) / (1 + s)) * Math.PI / 2), f0 = Math.cos((s / (1 + s)) * Math.PI / 2);
+      const ab = clamp((f * f) / (f0 * f0));
+      hudA = `ШАГ ${k}/${CONFIG.diffusionSteps}`; hudB = `ШУМ ${Math.sqrt(1 - ab).toFixed(2).replace('.', ',')}`;
+      g.diff.draw(A[o.asset], u, o.seed);
+      cells = k;
+      if (T >= p.diff1) {
+        if (o.kind === 'video') {
+          if (T < p.live) { frames = true; cells = Math.floor(stepped(p.diff1, 4, T) * 9 + 1e-4); hudA = `КАДРЫ ${Math.round(cells / 9 * 108)}/108`; hudB = '24 К/С'; }
+          else { frames = true; cells = 9; vOn = true; hudA = `ГОТОВО ✓`; hudB = `${o.dur}${NB}С`; led = 'done'; }
+        } else { hudA = 'ГОТОВО ✓'; hudB = o.ires; led = 'done'; cells = 30; }
+      }
+      if (T >= p.eject) { hudA = 'ВЫДАЧА'; hudB = '→ СКЛАД'; }
+    }
+    wantVideo(g.vid, o.asset, p.live ?? 0, T, vOn && o.kind === 'video');
+  }
+  // свободный шлюз держит на экране свой последний выпуск (видео продолжает идти)
+  let idleSrc = null;
+  if (!o && !state.reduced && lastDone && T >= cal) {
+    sb = false; idleSrc = imgURL(lastDone.asset); hud = true;
+    hudA = 'ГОТОВО ✓'; hudB = lastDone.kind === 'video' ? `${lastDone.dur}${NB}С` : lastDone.ires;
+    g.spec.textContent = `${aspectLabel(A[lastDone.asset])} · ${lastDone.kind === 'video' ? upper(lastDone.res) : lastDone.ires}`;
+    doc = `ПОСЛ. №${NB}${pad4(lastDone.no)} ✓`; cells = lastDone.kind === 'video' ? 9 : 30; frames = lastDone.kind === 'video';
+    const isV = lastDone.kind === 'video';
+    wantVideo(g.vid, isV ? lastDone.asset : null, lastDone.p.live ?? 0, T, isV);
+    vOn = isV;
+  } else if (!o || state.reduced) wantVideo(g.vid, null, 0, T, false);
+  if (g.last.idle !== idleSrc) { if (idleSrc) g.idle.src = idleSrc; g.last.idle = idleSrc; }
+  g.idle.classList.toggle('on', !!idleSrc);
+  if (idleSrc && lastDone) { const f = A[lastDone.asset].focus || [.5, .5]; g.idle.style.objectPosition = g.vid.style.objectPosition = `${f[0] * 100}% ${f[1] * 100}%`; }
+  else if (o) { const f = A[o.asset].focus || [.5, .5]; g.vid.style.objectPosition = `${f[0] * 100}% ${f[1] * 100}%`; }
+  if (g.last.led !== led) { g.led.dataset.s = led; g.last.led = led; }
+  g.el.classList.toggle('is-run', !!o && !state.reduced);
+  g.standby.style.opacity = sb ? 1 : 0;
+  if (g.last.sbTxt !== sbTxt) { g.sbLbl.textContent = sbTxt; g.last.sbTxt = sbTxt; }
+  g.cv.classList.toggle('on', cvOn);
+  if (!vOn) g.vid.classList.remove('on');
+  g.hudT.classList.toggle('on', hud); g.hudB.classList.toggle('on', hud);
+  if (hudA && g.last.step !== hudA) { g.step.textContent = hudA; g.last.step = hudA; }
+  if (hudB && g.last.noise !== hudB) { g.noise.textContent = hudB; g.last.noise = hudB; }
+  g.frame.style.transform = shut ? `translateY(${shut * 100}%)` : '';
+  if (g.last.st !== doc) { g.st.textContent = doc; g.last.st = doc; }
+  if (g.last.price !== price) { g.price.textContent = price; g.last.price = price; }
+  g.price.classList.toggle('on', priceOn && !!price);
+  g.tl.classList.toggle('frames', frames);
+  if (g.last.cells !== cells + (frames ? 'f' : '')) { g.cells.forEach((c, k) => c.classList.toggle('f', k < cells)); g.last.cells = cells + (frames ? 'f' : ''); }
+}
+
+function tokensRender(T) {
+  const seen = new Set();
+  const rem = geo.rem || 10;
+  for (const o of orders) {
+    const p = o.p;
+    if (T < p.spawn || T >= p.storeEnd) continue;
+    const ticketPhase = T < p.arrive + 2 * TK;
+    const outPhase = T >= p.eject;
+    if (!ticketPhase && !outPhase) continue;
+    const t = tokenFor(o); seen.add(o.no);
+    let x, y, op = 1, done = false, rot = 0, feed = 0;
+    const gi = GATE_OF[o.model];
+    if (ticketPhase) {
+      if (T < p.printEnd && state.reduced) { x = geo.tray.x; y = geo.tray.y; }
+      else if (T < p.printEnd) {        // печать: лента выходит из щели вверх построчно, микродребезг
+        const n = o.printTicks * 2, k = Math.floor((T - p.spawn) / (TK / 2));
+        const pq = clamp((k + tickEase(((T - p.spawn) / (TK / 2)) % 1)) / n);
+        feed = geo.tkH * (1 - pq);
+        x = geo.tray.x + (hash(o.no * 31 + k) - .5) * .12 * rem; y = geo.tray.y + feed; rot = (hash(o.no * 17 + k) - .5) * .4;
+      } else if (T < p.launch) { x = geo.tray.x; y = geo.tray.y; }
+      else if (T < p.arrive) {
+        const n = rideTicks(NBP.tray, NBP.gates[gi]);
+        const b = NBP.tray + (NBP.gates[gi] - NBP.tray) * stepped(p.launch, n, T);
+        ({ x, y } = bToXY(b));
+        if (!state.mobile) y = geo.tray.y;
+      } else {                     // шлюз втягивает чек
+        const q = stepped(p.arrive, 2, T);
+        x = geo.gates[gi].x; y = geo.gates[gi].y - (state.mobile ? 0 : geo.riseG * q);
+        if (state.mobile) op = 1 - q;
+      }
+    } else {
+      done = true;
+      if (T < p.ejectEnd) { const q = stepped(p.eject, 2, T); x = geo.gates[gi].x; y = geo.gates[gi].y - (state.mobile ? 0 : geo.riseG * (1 - q)); if (state.mobile) op = q; }
+      else if (T < p.store) {
+        const n = rideTicks(NBP.gates[gi], NBP.store);
+        ({ x, y } = bToXY(NBP.gates[gi] + (NBP.store - NBP.gates[gi]) * stepped(p.ejectEnd, n, T)));
+      } else { const q = stepped(p.store, 2, T); x = geo.store.x; y = geo.store.y - (state.mobile ? 0 : geo.riseS * q); if (state.mobile) op = 1 - q; }
+    }
+    const mini = state.mobile && !(ticketPhase && T < p.launch);
+    const cls = 'tk' + (done ? ' done' : '') + (mini ? ' mini' : '');
+    if (t.cls !== cls) { t.el.className = cls; t.cls = cls; }
+    const w = mini ? (t.el.offsetWidth || 60) : geo.tkW;
+    const tx = x - w / 2, ty = mini ? y - 8 : y;
+    t.el.style.transform = `translate3d(${tx.toFixed(1)}px,${ty.toFixed(1)}px,0) rotate(${rot.toFixed(2)}deg)`;
+    t.el.style.opacity = op;
+    t.el.style.clipPath = feed > 0.5 ? `inset(0 0 ${feed.toFixed(1)}px 0)` : '';
+    if (!t.vis) { t.el.style.visibility = 'visible'; t.vis = true; }
+  }
+  for (const [no, t] of TOK) if (!seen.has(no)) { if (t.vis) { t.el.style.visibility = 'hidden'; t.vis = false; } if (!orders.includes(t.o)) { t.el.remove(); TOK.delete(no); } }
+  // принтер: LED горит во время печати
+  const printing = orders.some(o => T >= o.p.spawn && T < o.p.printEnd);
+  $('#pLed').classList.toggle('on', printing);
+}
+
+function storeRender(T) {
+  const list = storedList(T);
+  const vids = list.filter(o => o.kind === 'video'), imgs = list.filter(o => o.kind === 'image');
+  const cur = vids[0], prev = vids[1];
+  // слой, который уже держит текущий, остаётся; новый въезжает шторкой за 3 такта
+  let li = SL.findIndex(l => l.cur === cur.no);
+  if (li < 0) { li = SL.findIndex(l => !prev || l.cur !== prev.no); if (li < 0) li = 0; setLayer(SL[li], cur); }
+  const other = SL[1 - li];
+  if (prev && other.cur !== prev.no) setLayer(other, prev);
+  const q = state.reduced ? 1 : stepped(cur.p.storeEnd, 3, T);
+  SL[li].el.style.zIndex = 2; other.el.style.zIndex = 1;
+  SL[li].el.style.transform = q < 1 ? `translateX(${((q - 1) * 100).toFixed(2)}%)` : '';
+  other.el.style.transform = '';
+  wantVideo(SL[li].vid, cur.asset, cur.p.live != null ? cur.p.live : cur.p.storeEnd, T, true);
+  wantVideo(other.vid, prev ? prev.asset : null, 0, T, q < 1 && !!prev);
+  if (sRcpt._k !== cur.no) {
+    sRcpt._k = cur.no;
+    const m = MODEL[cur.model];
+    sRcpt.innerHTML = `<p class="r1 hm"><span>ЗАКАЗ №${NB}${pad4(cur.no)} · ${cur.mode}</span><span class="ok">ГОТОВО ✓</span></p>
+      <p class="hm"><span>${upper(m.name)} · ${specOf(cur)}</span><b>${fmtRub(cur.cost, true)}</b></p>
+      <p class="r1 js"><span>{"id":"gen_${pad4(cur.no)}","status":"done",</span></p>
+      <p class="js"><span>&nbsp;"model":"${m.id}",</span><span>"cost_rub":<b>${fmtNum2(cur.cost)}</b>}</span></p>`;
+    const [w, h] = outDims(cur); sDim.textContent = `${w} × ${h} · ${cur.dur}${NB}С`;
+    $('#sPrompt').textContent = `«${cur.prompt || A[cur.asset].prompt}»`;
+  }
+  // полка изображений: новое падает в слот 1, остальные сдвигаются
+  const newest = imgs[0];
+  const qq = state.reduced ? 1 : stepped(newest.p.storeEnd, 3, T);
+  RACK.forEach((r, k) => {
+    const o = imgs[k]; if (!o) return;
+    if (r.cur !== o.no) {
+      r.cur = o.no; r.img.src = imgURL(o.asset);
+      r.cap.textContent = `№${NB}${pad4(o.no)} ✓`; r.pr.textContent = fmtRub(o.cost, true);
+      r.img.style.objectPosition = `${(A[o.asset].focus || [.5, .5])[0] * 100}% ${(A[o.asset].focus || [.5, .5])[1] * 100}%`;
+    }
+    r.f.style.transform = qq < 1 ? (k === 0 ? `translateY(${((qq - 1) * 110).toFixed(1)}%)` : `translateX(calc(${((qq - 1) * 100).toFixed(1)}% - ${((1 - qq) * .6).toFixed(2)}rem))`) : '';
+  });
+}
+function setLayer(L, o) {
+  L.cur = o.no;
+  L.img.src = imgURL(o.asset);
+  const a = A[o.asset];
+  L.el.classList.toggle('portrait', a.w / a.h < 1.2);
+  const f = a.focus || [.5, .5];
+  L.img.style.objectPosition = L.vid.style.objectPosition = a.w / a.h < 1.2 ? '' : `${f[0] * 100}% ${f[1] * 100}%`;
+  L.vid.classList.remove('on');
+}
+
+function beltRender(T) {
+  const k = Math.floor(T / TK), f = (T / TK) - k;
+  const off = state.reduced ? 0 : ((k + tickEase(f)) * geo.pxPerB * V) % (geo.beltPeriod || 1);
+  const strip = $('#beltStrip');
+  strip.style.transform = state.mobile ? `translate3d(0,${(off % (geo.beltPeriod || 1)) - (geo.beltPeriod || 0)}px,0)` : `translate3d(${-off}px,0,0)`;
+}
+
+/* =====================================================================
+   14 · МАСТЕР-ТАЙМЛАЙН (GSAP) — хореография первых секунд
+   ===================================================================== */
+const mech = window.gsap ? gsap.parseEase('back.out(1.25)') : (p => p);
+const ratchet = n => p => Math.round(mech(p) * n) / n;   // храповик: ступенчатое движение
+let master = null;
+function buildMaster() {
+  if (!window.gsap) return null;
+  const tl = gsap.timeline({ paused: true });
+  const draw = { v: 0 };
+  // Фаза 0 · 0.00–0.60 — чертёж прорисовывается, координаты, калибровка LED (в gateRender)
+  tl.fromTo(draw, { v: 0 }, { v: 1, duration: 0.6, ease: 'none', onUpdate: () => sheet.style.setProperty('--draw', draw.v.toFixed(3)) }, 0);
+  tl.fromTo('.ruler span', { opacity: 0 }, { opacity: 1, duration: 0.04, ease: 'steps(1)', stagger: 0.04 }, 0.04);
+  tl.fromTo('.nav > *', { opacity: 0 }, { opacity: 1, duration: 0.12, ease: 'steps(1)', stagger: 0.06 }, 0);
+  tl.fromTo('.st-in, .tray, .store, .belt, .line-head > *, .line-foot > *', { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.24, ease: ratchet(3), stagger: 0.04 }, 0.04);
+  tl.fromTo('.gate', { opacity: 0 }, { opacity: 1, duration: 0.12, ease: 'steps(2)', stagger: 0.12 }, 0.06);   // модули включаются по очереди 1-2-3-4
+  tl.fromTo('.panel', { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.24, ease: ratchet(3) }, 0.24);
+  // Фаза 1 · 0.48–2.00 — надзаголовок, H1 по строкам из-под маски (храповик), подзаголовок, CTA
+  tl.fromTo('.eyebrow', { opacity: 0 }, { opacity: 1, duration: 0.12, ease: 'steps(2)' }, 0.48);
+  tl.fromTo('.h1-in', { yPercent: 104 }, { yPercent: 0, duration: 0.48, ease: ratchet(6), stagger: 0.24 }, 0.6);
+  tl.fromTo('.sub', { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.36, ease: ratchet(4) }, 1.2);
+  tl.fromTo('.cta > *', { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.24, ease: ratchet(3), stagger: 0.12 }, 1.44);
+  tl.fromTo('.trust > *', { opacity: 0 }, { opacity: 1, duration: 0.12, ease: 'steps(2)', stagger: 0.12 }, 1.8);
+  return tl;
+}
+
+/* =====================================================================
+   15 · ЧАСЫ, ПЕРЕМОТКА ?t=, prefers-reduced-motion
+   ===================================================================== */
+function renderAll(T, instant = false) {
+  if (master) master.time(Math.min(T, master.duration()), false);
+  ensureScheduled(T);
+  renderComposer(T, instant);
+  odCredits.set(T >= 0.6 || state.reduced ? String(CONFIG.starterCredits) : '000', !instant && !state.reduced);
+  GATES.forEach((g, i) => gateRender(g, i, T));
+  tokensRender(T);
+  storeRender(T);
+  beltRender(T);
+  if (!instant) soundEvents(T);
+  return syncVideos();
+}
+let lastSoundT = 0;
+function soundEvents(T) {
+  if (!state.sound) { lastSoundT = T; return; }
+  const cross = t => lastSoundT < t && t <= T;
+  if (Math.floor(T / TK) !== Math.floor(lastSoundT / TK) && orders.some(o => (T > o.p.launch && T < o.p.arrive) || (T > o.p.ejectEnd && T < o.p.store))) Sound.click(.18);
+  for (const o of orders) {
+    if (cross(o.p.arrive) || cross(o.p.eject) || cross(o.p.store)) Sound.click(.7);
+    if (T >= o.p.spawn && T < o.p.printEnd && Math.floor(T / (TK / 2)) !== Math.floor(lastSoundT / (TK / 2))) Sound.click(.3);
+    if (cross(o.p.diff1)) Sound.click(.9);
+  }
+  for (const s of SCRIPT) for (const k of ['model', 'dur', 'res', 'press']) if (cross(s.t[k])) Sound.click(.6);
+  lastSoundT = T;
+}
+
+let rafLast = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, (now - rafLast) / 1000); rafLast = now;
+  if (!state.frozen && !document.hidden) { state.T += dt; renderAll(state.T); }
+  requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', () => { rafLast = performance.now(); });
+
+window.__seek = async function (sec) {
+  window.__seekDone = false;
+  state.frozen = true; state.T = Math.max(0, +sec || 0);
+  comp.user = false; compPrev = null;
+  resetSchedule();
+  await renderAll(state.T, true);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  window.__seekDone = true;
+  return state.T;
+};
+window.__state = state;
+
+let resizeRaf = 0;
+function onResize() { cancelAnimationFrame(resizeRaf); resizeRaf = requestAnimationFrame(() => { measure(); GATES.forEach(g => g.diff.key = ''); renderAll(state.T, true); }); }
+
+async function boot() {
+  document.querySelectorAll('[data-brand]').forEach(e => e.textContent = CONFIG.brand);
+  document.querySelectorAll('[data-credits]').forEach(e => e.textContent = CONFIG.starterCredits);
+  resetSchedule();
+  master = buildMaster();
+  measure();
+  if (state.dev) { $('input[name="mode"][value="dev"]').checked = true; setDev(true, true); }
+  new ResizeObserver(onResize).observe(sheet);
+  mqMobile.addEventListener('change', onResize);
+  mqReduce.addEventListener('change', e => { state.reduced = e.matches; document.documentElement.classList.toggle('rm', e.matches); if (e.matches) enterReduced(); else { state.frozen = false; } });
+  fontsReady.then(onResize);
+  const tParam = params.get('t');
+  if (state.reduced) { enterReduced(); return; }
+  if (tParam != null) {
+    renderAll(0, true);
+    await Promise.race([Promise.all([fontsReady, assetsReady]), new Promise(r => setTimeout(r, 9000))]);
+    measure();
+    await window.__seek(parseFloat(tParam));
+    requestAnimationFrame(loop);
+    return;
+  }
+  renderAll(0, true);
+  rafLast = performance.now();
+  requestAnimationFrame(loop);
+}
+async function enterReduced() {
+  state.frozen = true; state.T = 11.04;
+  resetSchedule();
+  await Promise.race([imagesReady, new Promise(r => setTimeout(r, 4000))]);
+  measure();
+  if (master) master.progress(1);
+  comp.user = false; compPrev = null;
+  await renderAll(state.T, true);
+  window.__seekDone = true;
+  requestAnimationFrame(loop);
+}
+boot();
+</script>
+</body>
+</html>

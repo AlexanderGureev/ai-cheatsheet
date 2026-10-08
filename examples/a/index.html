@@ -1,0 +1,2139 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Синтез — генеративное видео и изображения</title>
+<meta name="description" content="Seedance 2.5, Kling 3.0, Seedream 5.0 и Kling Image 3.0 в одном аккаунте и одном API. Работает из России без VPN. Цена каждой генерации в рублях — до запуска.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#04050A">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
+<style>
+/* ==========================================================================
+   «Генезис» — прототип A. Тёмный кинематографичный космос.
+   Палитра: космос #04050A→#0A0D18, звёзды #F4EFE6, дальняя пыль #8FA3C7,
+   энергия (ядро, цена, основная кнопка) #FFB070. Фиолетового нет.
+   ========================================================================== */
+:root{
+  --space-0:#04050A;
+  --space-1:#0A0D18;
+  --ivory:#F4EFE6;
+  --ivory-80:rgba(244,239,230,.80);
+  --ivory-64:rgba(244,239,230,.64);
+  --ivory-48:rgba(244,239,230,.48);
+  --ivory-24:rgba(244,239,230,.24);
+  --ivory-12:rgba(244,239,230,.12);
+  --ivory-08:rgba(244,239,230,.08);
+  --dust:#8FA3C7;
+  --amber:#FFB070;
+  --amber-hot:#FFD7A6;
+  --gutter:clamp(20px,3.34vw,64px);
+  --nav-h:72px;
+  --trust-h:58px;
+  --f-display:"Cormorant Garamond", "Cormorant", Georgia, serif;
+  --f-ui:"Inter Tight", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, monospace;
+  --ease-out:cubic-bezier(.16,1,.3,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--space-0);
+  color:var(--ivory);
+  font-family:var(--f-ui);
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  overflow:hidden;
+  font-variant-numeric:tabular-nums;
+}
+a{color:inherit;text-decoration:none}
+button,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:1px solid var(--amber);outline-offset:3px}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- слои: canvas → вуаль → подписи 3D → интерфейс ---------- */
+#scene{position:fixed;inset:0;width:100vw;height:100vh;height:100lvh;display:block;z-index:0}
+.veil{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:
+    radial-gradient(70% 58% at 0% 100%, rgba(4,5,10,.92) 0%, rgba(4,5,10,.62) 46%, rgba(4,5,10,0) 78%),
+    radial-gradient(42% 46% at 100% 100%, rgba(4,5,10,.86) 0%, rgba(4,5,10,.4) 55%, rgba(4,5,10,0) 85%),
+    linear-gradient(to bottom, rgba(4,5,10,.72) 0, rgba(4,5,10,0) 150px);
+}
+#labels{position:fixed;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+
+/* ---------- прелоадер: точка + реальный прогресс ---------- */
+.pre{position:fixed;z-index:6;left:46.5%;top:calc(44.5vh + 22px);transform:translate(-50%,0);pointer-events:none;
+  font:500 11px/1 var(--f-mono);letter-spacing:.16em;color:var(--ivory-64);text-transform:uppercase;
+  display:flex;flex-direction:column;align-items:center;gap:12px;white-space:nowrap}
+.pre-row{display:flex;gap:18px}
+.pre-pct{color:var(--amber);min-width:4ch;text-align:right}
+.pre-line{width:180px;height:1px;background:var(--ivory-12);position:relative;overflow:hidden}
+.pre::before{content:"";position:absolute;left:50%;top:-22px;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#FFF4E4;
+  box-shadow:0 0 10px 2px rgba(255,176,112,.75),0 0 44px 12px rgba(255,176,112,.18);animation:prePulse 1.4s ease-in-out infinite;transition:opacity .3s}
+.pre.gl::before{opacity:0}
+@keyframes prePulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.5);opacity:1}}
+.pre-line i{position:absolute;inset:0;background:var(--ivory-64);transform-origin:0 50%;transform:scaleX(0)}
+
+/* ---------- навигация ---------- */
+.nav{position:fixed;z-index:8;top:0;left:0;right:0;height:var(--nav-h);
+  display:flex;align-items:center;justify-content:space-between;padding:0 var(--gutter);opacity:0}
+.logo{display:flex;align-items:center;gap:12px;font:500 25px/1 var(--f-display);letter-spacing:.01em}
+.logo svg{width:26px;height:26px;display:block}
+.nav-links{display:flex;gap:34px;font-size:14px;color:var(--ivory-64);position:absolute;left:50%;transform:translateX(-50%)}
+.nav-links a{position:relative;padding:6px 0;transition:color .4s var(--ease-out)}
+.nav-links a:hover{color:var(--ivory)}
+.nav-right{display:flex;align-items:center;gap:26px;font-size:14px}
+.nav-login{color:var(--ivory-80)}
+.nav-login:hover{color:var(--ivory)}
+.btn-ghost{display:inline-flex;align-items:center;height:38px;padding:0 16px;border:1px solid var(--ivory-24);
+  border-radius:2px;color:var(--ivory);transition:border-color .4s var(--ease-out),background .4s var(--ease-out)}
+.btn-ghost:hover{border-color:var(--ivory-64);background:var(--ivory-08)}
+.nav-menu{display:none;background:none;border:1px solid var(--ivory-24);border-radius:2px;height:34px;padding:0 12px;
+  font:500 11px/1 var(--f-mono);letter-spacing:.12em}
+
+/* ---------- герой: абсолютная редакционная вёрстка ---------- */
+.hero{position:fixed;inset:0;z-index:4;pointer-events:none}
+.hero a,.hero button,.hero select,.hero textarea,.hero label{pointer-events:auto}
+.overline{position:absolute;left:var(--gutter);top:calc(var(--nav-h) + 30px);margin:0;
+  font:500 11px/1.2 var(--f-mono);letter-spacing:.16em;color:var(--ivory-64);text-transform:uppercase;
+  display:flex;align-items:center;gap:14px;opacity:0}
+.overline::before{content:"";width:28px;height:1px;background:var(--ivory-48)}
+
+.h1{position:absolute;left:calc(var(--gutter) - .04em);bottom:calc(var(--trust-h) + 34px);margin:0;
+  font-family:var(--f-display);font-weight:300;font-size:clamp(56px,8.3vw,190px);line-height:.9;letter-spacing:-.022em;
+  color:var(--ivory);max-width:62vw;font-feature-settings:"kern","liga","lnum"}
+.h1 .ln{display:block;white-space:nowrap}
+.stage{display:none}
+.h1 .h1-line-mask{padding:0 .14em .12em 0;margin:0 -.14em -.12em 0}
+.h1 em{font-style:italic;font-weight:300;letter-spacing:-.03em;padding-right:.04em}
+.h1 .dash{font-weight:300}
+
+.aside{position:absolute;right:var(--gutter);bottom:calc(var(--trust-h) + 40px);width:min(370px,28vw)}
+.sub{margin:0 0 26px;font-size:15px;line-height:1.55;color:var(--ivory-80);text-wrap:pretty}
+.sub b{font-weight:500;color:var(--ivory)}
+.ctas{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.btn-primary{position:relative;display:inline-flex;align-items:center;justify-content:center;height:50px;padding:0 22px;
+  background:var(--amber);color:#160C03;font-weight:600;font-size:15px;border-radius:2px;letter-spacing:.005em;
+  box-shadow:0 0 0 0 rgba(255,176,112,0);transition:background .35s var(--ease-out),box-shadow .5s var(--ease-out)}
+.btn-primary:hover{background:#FFC28E;box-shadow:0 0 32px -6px rgba(255,176,112,.55)}
+.btn-link{font-size:15px;color:var(--ivory);padding:6px 0;background:linear-gradient(var(--ivory-48),var(--ivory-48)) 0 100%/100% 1px no-repeat;
+  transition:background-size .5s var(--ease-out)}
+.btn-link:hover{background-size:0 1px;background-position:100% 100%}
+.micro{margin:14px 0 0;font:400 11px/1.5 var(--f-mono);letter-spacing:.04em;color:var(--ivory-64)}
+.micro b{color:var(--ivory);font-weight:500}
+
+/* ---------- строка доверия ---------- */
+.trust{position:absolute;left:0;right:0;bottom:0;height:var(--trust-h);padding:0 var(--gutter);
+  display:flex;align-items:center;justify-content:space-between;gap:24px;
+  border-top:1px solid var(--ivory-08);background:linear-gradient(to top, rgba(4,5,10,.85), rgba(4,5,10,.55));
+  font-size:13px;color:var(--ivory-64);pointer-events:auto}
+.trust-aegis{display:flex;align-items:center;gap:10px;white-space:nowrap}
+/* TODO: официальные логотипы из брендбука (Ростелеком, НМГ) — сейчас типографические словесные знаки */
+.wm{font-weight:600;color:var(--ivory);letter-spacing:.01em}
+.wm-sep{width:1px;height:14px;background:var(--ivory-24);margin:0 4px}
+.trust-facts{display:flex;align-items:center;gap:0;font:500 11px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ivory-64);white-space:nowrap}
+.trust-facts span+span::before{content:"·";margin:0 12px;color:var(--ivory-24)}
+
+/* ---------- консоль генерации (сингулярность) ---------- */
+.console{position:absolute;left:46.5%;top:44.5vh;width:clamp(530px,39vw,680px);transform:translate(-50%,-50%);}
+.mode{position:absolute;left:0;bottom:calc(100% + 12px);display:flex;gap:0;font:500 10.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;opacity:0}
+.mode button{background:none;border:0;padding:6px 0;margin-right:18px;color:var(--ivory-48);cursor:pointer;position:relative;text-transform:uppercase;letter-spacing:inherit;font:inherit}
+.mode button[aria-pressed="true"]{color:var(--ivory)}
+.mode button[aria-pressed="true"]::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--ivory)}
+.mode-hint{position:absolute;right:0;bottom:calc(100% + 18px);font:400 10.5px/1 var(--f-mono);letter-spacing:.12em;color:var(--ivory-48);text-transform:uppercase;opacity:0}
+
+.panel{position:relative;background:rgba(6,7,13,.82);border:1px solid var(--ivory-12);border-radius:3px;
+  -webkit-backdrop-filter:blur(14px) saturate(1.1);backdrop-filter:blur(14px) saturate(1.1);overflow:hidden;
+  clip-path:inset(50% 50% 50% 50%);}
+/* «горячая» кромка: свет ядра скользит по верхнему краю панели */
+.panel::before{content:"";position:absolute;left:0;right:0;top:-1px;height:1px;pointer-events:none;
+  background:linear-gradient(90deg, transparent 8%, rgba(255,176,112,.0) 20%, rgba(255,200,150,.9) 50%, rgba(255,176,112,0) 80%, transparent 92%);opacity:var(--edge,.55)}
+.face{padding:16px 18px 14px}
+.bar-top{display:flex;justify-content:space-between;align-items:center;font:500 10.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ivory-48)}
+.bar-top label{display:flex;align-items:center;gap:8px}
+.bar-top label::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber)}
+#prompt{display:block;width:100%;margin:10px 0 12px;padding:0;background:none;border:0;resize:none;outline:none;
+  font:400 17px/1.45 var(--f-ui);color:var(--ivory);height:calc(17px*1.45*2);overflow:hidden;caret-color:var(--amber)}
+#prompt::placeholder{color:var(--ivory-48)}
+.caret{display:inline-block;width:1px;height:1.1em;background:var(--amber);vertical-align:-2px;margin-left:1px}
+.bar-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--ivory-08);padding-top:12px}
+.params{display:flex;gap:6px;min-width:0}
+.sel{position:relative}
+.sel select{appearance:none;-webkit-appearance:none;background:transparent;border:1px solid var(--ivory-12);border-radius:2px;
+  height:34px;padding:0 24px 0 10px;font:500 12px/1 var(--f-mono);letter-spacing:.02em;color:var(--ivory);cursor:pointer;
+  transition:border-color .3s var(--ease-out)}
+.sel select:hover{border-color:var(--ivory-48)}
+.sel::after{content:"";position:absolute;right:10px;top:50%;width:5px;height:5px;border-right:1px solid var(--ivory-64);border-bottom:1px solid var(--ivory-64);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+.sel option,.sel optgroup{background:#0A0D18;color:var(--ivory)}
+.go{position:relative;flex:none;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 16px;border:0;border-radius:2px;
+  background:var(--amber);color:#160C03;font:600 14px/1 var(--f-ui);cursor:pointer;white-space:nowrap;
+  transition:background .3s var(--ease-out), box-shadow .4s var(--ease-out)}
+.go:hover{background:#FFC28E;box-shadow:0 0 28px -6px rgba(255,176,112,.6)}
+.go .price{font:600 13px/1 var(--f-mono);letter-spacing:0;min-width:5.2ch;text-align:right}
+.go[data-pressed="1"]{transform:scale(.965)}
+.quote{position:absolute;left:0;right:0;top:calc(100% + 12px);display:flex;justify-content:space-between;
+  font:500 10.5px/1 var(--f-mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ivory-48);opacity:0;white-space:nowrap}
+.quote b{color:var(--amber);font-weight:500}
+
+/* терминал (режим «Разработчику») */
+.face-term{position:absolute;inset:0;padding:14px 18px;opacity:0;visibility:hidden}
+.panel[data-mode="dev"] .face-bar{opacity:0;visibility:hidden}
+.panel[data-mode="dev"] .face-term{opacity:1;visibility:visible}
+.face-bar,.face-term{transition:opacity .5s var(--ease-out),visibility .5s}
+.term-top{display:flex;justify-content:space-between;align-items:center;font:500 10.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ivory-48);margin-bottom:12px}
+.copy{background:none;border:1px solid var(--ivory-12);border-radius:2px;height:24px;padding:0 9px;font:inherit;letter-spacing:.12em;color:var(--ivory-80);cursor:pointer}
+.copy:hover{border-color:var(--ivory-48);color:var(--ivory)}
+.term pre{margin:0;font:400 12.5px/1.62 var(--f-mono);color:var(--ivory-80);white-space:pre;overflow:hidden}
+.t-cmd{color:var(--ivory)}
+.t-url{color:var(--dust)}
+.t-flag{color:var(--ivory-48)}
+.t-str{color:#E6D5BC}
+.t-key{color:var(--dust)}
+.t-num{color:var(--ivory)}
+.t-com{color:var(--ivory-48)}
+.t-model{position:relative;display:inline-block;vertical-align:top;height:1.62em;overflow:hidden}
+.t-model span{display:block;color:var(--ivory);background:rgba(244,239,230,.07);padding:0 2px;margin:0 -2px}
+.t-cost{color:var(--amber);text-shadow:0 0 12px rgba(255,176,112,.45)}
+.t-resp{opacity:1}
+
+/* ---------- 3D-подписи: орбиты и кадры ---------- */
+.olabel{position:absolute;left:0;top:0;pointer-events:auto;cursor:default;white-space:nowrap;text-shadow:0 0 10px rgba(4,5,10,.95),0 0 3px rgba(4,5,10,.9);
+  font:500 10.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ivory-64);
+  padding:6px 0;opacity:0;will-change:transform,opacity;transition:color .4s var(--ease-out)}
+.olabel .pr{color:var(--amber)}
+.olabel .kind{color:var(--ivory-48)}
+.olabel i{display:inline-block;width:14px;height:1px;background:currentColor;vertical-align:3px;margin-right:9px;opacity:.7}
+.olabel[data-kind="image"] i{background:none;border-top:1px dotted currentColor;height:0}
+.olabel.hi{color:var(--ivory)}
+.olabel.flip i{display:none}
+.olabel.flip::after{content:"";display:inline-block;width:14px;height:1px;background:currentColor;vertical-align:3px;margin-left:9px;opacity:.7}
+.olabel.flip[data-kind="image"]::after{background:none;border-top:1px dotted currentColor;height:0}
+.fcap{position:absolute;left:0;top:0;white-space:nowrap;text-shadow:0 0 8px rgba(4,5,10,.95);font:500 9.5px/1 var(--f-mono);letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ivory-64);opacity:0;will-change:transform,opacity}
+.fcap .pr{color:var(--amber)}
+.fcap.big{font-size:10.5px;color:var(--ivory-80)}
+
+.plate{position:fixed;z-index:7;left:0;top:0;width:300px;padding:12px 14px;background:rgba(6,7,13,.9);border:1px solid var(--ivory-12);border-radius:2px;
+  pointer-events:none;opacity:0;transform:translate3d(-9999px,0,0);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.plate-k{font:500 10px/1.3 var(--f-mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ivory-64);display:flex;justify-content:space-between;gap:12px}
+.plate-k b{color:var(--amber);font-weight:500}
+.plate-p{margin:8px 0 0;font-size:13px;line-height:1.45;color:var(--ivory)}
+
+/* ---------- планшет ---------- */
+@media (max-width:1100px){
+  .nav-links{gap:22px}
+  .aside{width:min(340px,36vw)}
+  .h1{font-size:clamp(56px,9.4vw,120px)}
+}
+
+/* ---------- мобильная мизансцена (390): вертикальные орбиты, H1 сверху ---------- */
+@media (max-width:900px){
+  :root{--nav-h:56px;--gutter:16px}
+  body{overflow:hidden}
+  .nav-links,.nav-right .btn-ghost{display:none}
+  .nav-menu{display:inline-flex;align-items:center}
+  .nav-right{gap:16px}
+  .logo{font-size:22px}
+  /* мизансцена в колонку: надзаголовок → H1 → сцена с кадрами → строка генерации → CTA → доверие */
+  .hero{display:flex;flex-direction:column;padding:calc(var(--nav-h) + 6px) var(--gutter) 0}
+  .overline{position:static;order:1;margin:0 0 12px;font-size:9.5px;letter-spacing:.12em;gap:10px}
+  .overline::before{width:16px}
+  .h1{position:static;order:2;font-size:min(11.4vw,46px);line-height:.95;max-width:none;margin:0}
+  .stage{display:block;order:3;flex:1 1 auto;min-height:110px}
+  .console{position:relative;order:4;left:auto;top:auto;bottom:auto;width:auto;transform:none;margin:30px 0 18px}
+  .mode{bottom:calc(100% + 6px)}
+  .mode-hint{display:none}
+  .face{padding:11px 12px 12px}
+  #prompt{font-size:15px;height:calc(15px*1.45*2);margin:8px 0 10px}
+  .bar-bottom{flex-wrap:wrap;gap:8px;padding-top:10px}
+  .params{gap:4px;flex:1 1 100%}
+  .params .sel:first-child{flex:1 1 auto}
+  .sel select{height:32px;padding:0 20px 0 8px;font-size:11px;width:100%}
+  .sel::after{right:8px}
+  .go{width:100%;justify-content:center;height:40px}
+  .quote{display:none}
+  .aside{position:static;order:5;width:auto;margin:0 0 12px}
+  .sub{font-size:13px;line-height:1.5;margin-bottom:14px}
+  .ctas{gap:10px 18px}
+  .btn-primary{width:100%;height:48px}
+  .micro{font-size:10px;margin-top:10px;letter-spacing:0}
+  .trust{position:relative;order:6;left:auto;right:auto;bottom:auto;height:auto;margin:0 calc(-1 * var(--gutter));padding:11px var(--gutter) 13px;
+    flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;font-size:11.5px}
+  .trust-aegis{white-space:normal;flex-wrap:wrap;gap:4px 6px}
+  .trust-facts{font-size:9px;letter-spacing:.08em}
+  .trust-facts span+span::before{margin:0 6px}
+  .term pre{font-size:9.6px}
+  .face-term{padding:11px 12px}
+  .tt-x{display:none}
+  .olabel{font-size:8.2px;letter-spacing:.04em;padding:3px 0}
+  .olabel .kd{display:none}
+  .olabel i,.olabel.flip::after{width:9px;margin-right:5px}
+  .olabel.flip i{display:inline-block}
+  .olabel.flip::after{display:none}
+  .fcap{font-size:8.5px}
+  .veil{background:
+    linear-gradient(to bottom, rgba(4,5,10,.88) 0, rgba(4,5,10,.6) 150px, rgba(4,5,10,0) 200px),
+    linear-gradient(to top, rgba(4,5,10,.95) 0, rgba(4,5,10,.9) 300px, rgba(4,5,10,0) 360px);}
+}
+@media (max-width:900px) and (max-height:700px){ body{overflow-y:auto} }
+/* телефон: больше воздуха сцене — надзаголовок и шапка строки скрыты, подзаголовок — первая фраза
+   (без VPN, договор и цена до запуска остаются в строке доверия, легенде орбит и на кнопке) */
+@media (max-width:600px){
+  .overline{display:none}
+  .hero{padding-top:calc(var(--nav-h) + 10px)}
+  .bar-top{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  #prompt{margin-top:2px}
+  .sub-x{display:none}
+}
+/* планшет в портрете: та же колонная мизансцена, крупнее типографика */
+@media (min-width:600px) and (max-width:900px){
+  :root{--gutter:32px}
+  .h1{font-size:min(11vw,84px)}
+  .overline{font-size:11px}
+  .console{align-self:center;width:100%;max-width:640px}
+  .sub{font-size:15px}
+  .ctas{flex-wrap:nowrap}
+  .btn-primary{width:auto;padding:0 26px}
+  .olabel{font-size:10px;letter-spacing:.1em}
+  .fcap{font-size:9.5px}
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="veil" aria-hidden="true"></div>
+<div id="labels" aria-hidden="true"></div>
+
+<!-- 0.0–0.4 с: прелоадер — часть шоу. Реальный прогресс загрузки ассетов -->
+<div class="pre" id="pre" aria-hidden="true">
+  <div class="pre-row"><span id="preLabel">Синтез · 4 модели на орбите</span><span class="pre-pct" id="prePct">0%</span></div>
+  <div class="pre-line"><i id="preLine"></i></div>
+</div>
+
+<header class="nav" id="nav">
+  <a class="logo" href="#" aria-label="Синтез — на главную">
+    <svg viewBox="0 0 26 26" aria-hidden="true"><ellipse cx="13" cy="13" rx="11.5" ry="4.6" fill="none" stroke="#F4EFE6" stroke-opacity=".55" stroke-width="1" transform="rotate(-18 13 13)"/><circle cx="13" cy="13" r="3" fill="#FFB070"/><circle cx="13" cy="13" r="6" fill="#FFB070" fill-opacity=".14"/></svg>
+    <span id="brandName">Синтез</span>
+  </a>
+  <nav class="nav-links" aria-label="Основная навигация">
+    <a href="#models">Модели</a><a href="#pricing">Цены</a><a href="#api">API</a><a href="#teams">Для команд</a>
+  </nav>
+  <div class="nav-right">
+    <a class="nav-login" href="#login">Войти</a>
+    <a class="btn-ghost" href="#signup">Начать бесплатно</a>
+    <button class="nav-menu" type="button" aria-label="Открыть меню">Меню</button>
+  </div>
+</header>
+
+<main class="hero" id="hero">
+  <p class="overline" id="overline">Генеративное видео и изображения · 4 топ-модели</p>
+
+  <!-- Сингулярность: строка генерации стоит в центре вселенной -->
+  <section class="console" id="console" aria-label="Строка генерации">
+    <div class="mode" id="mode" role="group" aria-label="Режим экрана">
+      <button type="button" id="modeProd" aria-pressed="true">Продюсеру</button>
+      <button type="button" id="modeDev" aria-pressed="false">Разработчику</button>
+    </div>
+    <div class="mode-hint" id="modeHint"></div>
+    <div class="panel" id="panel" data-mode="prod">
+      <form class="face face-bar" id="bar" autocomplete="off" novalidate>
+        <div class="bar-top">
+          <label for="prompt">Промпт</label>
+          <span id="barKind">Текст → видео</span>
+        </div>
+        <textarea id="prompt" rows="2" spellcheck="false" placeholder="Опишите кадр — Enter запускает генерацию" aria-describedby="quote"></textarea>
+        <div class="bar-bottom">
+          <div class="params">
+            <div class="sel"><select id="selModel" aria-label="Модель"></select></div>
+            <div class="sel"><select id="selA" aria-label="Длительность"></select></div>
+            <div class="sel"><select id="selB" aria-label="Разрешение"></select></div>
+          </div>
+          <button type="submit" class="go" id="go"><span class="lbl">Сгенерировать</span><span aria-hidden="true" class="lbl">·</span><span class="price" id="goPrice">0&nbsp;₽</span></button>
+        </div>
+      </form>
+      <div class="face-term" id="term" aria-label="Тот же запрос через API">
+        <div class="term-top"><span>POST /v1/generations<span class="tt-x"> · один ключ — 4 модели</span></span><button type="button" class="copy" id="copy">Копировать</button></div>
+        <div class="term"><pre id="termPre"></pre></div>
+      </div>
+    </div>
+    <div class="quote" id="quote"><span id="quoteL"></span><span class="q-r">Цена известна до запуска</span></div>
+  </section>
+
+  <h1 class="h1" id="h1"><span class="ln">Из&nbsp;одной строки&nbsp;<span class="dash">—</span></span><span class="ln"><em>вселенная</em> кадров</span></h1>
+  <div class="stage" aria-hidden="true"></div>
+
+  <div class="aside" id="aside">
+    <p class="sub" id="sub"><b>Seedance&nbsp;2.5, Kling&nbsp;3.0, Seedream&nbsp;5.0 и&nbsp;Kling&nbsp;Image&nbsp;3.0</b> — в&nbsp;одном аккаунте и&nbsp;одном API.<span class="sub-x"> Работает из&nbsp;России без&nbsp;VPN. Договор, оплата по&nbsp;счёту в&nbsp;рублях, цена каждой генерации&nbsp;— до&nbsp;запуска.</span></p>
+    <div class="ctas" id="ctas">
+      <a class="btn-primary" href="#signup">Получить стартовые кредиты</a>
+      <a class="btn-link" href="#api">Подключить по&nbsp;API&nbsp;→</a>
+    </div>
+    <p class="micro" id="micro"><b id="credits">500</b> кредитов на&nbsp;пробные генерации каждому новому аккаунту</p>
+  </div>
+
+  <footer class="trust" id="trust">
+    <div class="trust-aegis">
+      <!-- TODO: официальные логотипы из брендбука -->
+      <span>Под эгидой</span><span class="wm">Ростелекома</span><span>и</span><span class="wm">Национальной Медиа Группы</span>
+    </div>
+    <div class="trust-facts"><span>Российское юрлицо</span><span>Договор</span><span>Оплата по&nbsp;счёту в&nbsp;₽</span><span>Без VPN</span></div>
+  </footer>
+</main>
+
+<div class="plate" id="plate" aria-hidden="true">
+  <div class="plate-k"><span id="plateModel"></span><b id="platePrice"></b></div>
+  <div class="plate-k" style="margin-top:4px"><span id="plateParams"></span><span id="plateId"></span></div>
+  <p class="plate-p" id="platePrompt"></p>
+</div>
+
+<script type="module">
+/* ==========================================================================
+   «Генезис» · модули:
+   1. CONFIG и данные            5. Сцена: пыль, ядро, орбиты, кадры, пост
+   2. Утилиты, деньги             6. Расписание рождений (детерминированное)
+   3. Загрузка ассетов            7. Интерфейс: строка, терминал, подписи
+   4. GLSL                        8. Хореография, цикл, __seek
+   ========================================================================== */
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ---------- 1. CONFIG ---------- */
+// ЗАГЛУШКИ: заменить на реальный прайс
+const CONFIG = {
+  brand: 'Синтез',
+  apiHost: 'api.sintez.example',   // заглушка
+  starterCredits: 500,              // заглушка
+  models: [
+    { id: 'seedance-2.5',    name: 'Seedance 2.5',    kind: 'video', unit: 'сек',  priceRub: 12 },
+    { id: 'kling-3.0',       name: 'Kling 3.0',       kind: 'video', unit: 'сек',  priceRub: 14 },
+    { id: 'seedream-5.0',    name: 'Seedream 5.0',    kind: 'image', unit: 'изобр.', priceRub: 4 },
+    { id: 'kling-image-3.0', name: 'Kling Image 3.0', kind: 'image', unit: 'изобр.', priceRub: 5 },
+  ],
+  pricing: {
+    video: { durations: [5, 10, 15], resolutions: { '720p': 1, '1080p': 1.25 } },
+    image: { resolutions: { '1K': 1, '2K': 1.5 }, formats: ['16:9','1:1','4:5','9:16'] },
+  },
+};
+
+// Витрина: каждый ассет сгенерирован той моделью, чьё имя на нём стоит (../assets/manifest.json)
+const ASSETS = [
+  { id:'vid-moscow-night',    kind:'video', src:'../assets/vid-moscow-night.mp4',    poster:'../assets/vid-moscow-night.webp',    w:1280, h:720,  model:'seedance-2.5',    prompt:'Ночная Москва после дождя, чёрный седан на мокром бульваре, анаморфные блики' },
+  { id:'vid-dancer',          kind:'video', src:'../assets/vid-dancer.mp4',          poster:'../assets/vid-dancer.webp',          w:720,  h:1280, model:'seedance-2.5',    prompt:'Танец в тёмной студии среди тёплых частиц света, слоу-мо, световые следы' },
+  { id:'vid-perfume-gold',    kind:'video', src:'../assets/vid-perfume-gold.mp4',    poster:'../assets/vid-perfume-gold.webp',    w:1280, h:720,  model:'kling-3.0',       prompt:'Флакон духов медленно погружается в жидкое золото, макро, каустика' },
+  { id:'vid-taiga-dawn',      kind:'video', src:'../assets/vid-taiga-dawn.mp4',      poster:'../assets/vid-taiga-dawn.webp',      w:1280, h:720,  model:'kling-3.0',       prompt:'Пролёт дрона над заснеженной тайгой на рассвете, туман, первые лучи' },
+  { id:'vid-salt-desert-i2v', kind:'video', src:'../assets/vid-salt-desert-i2v.mp4', poster:'../assets/vid-salt-desert-i2v.webp', w:864,  h:1078, model:'kling-3.0',       prompt:'Оживить референс: ветер поднимает пальто, соляная пыль, медленный наезд' },
+  { id:'vid-ceramics',        kind:'video', src:'../assets/vid-ceramics.mp4',        poster:'../assets/vid-ceramics.webp',        w:1280, h:720,  model:'kling-3.0',       prompt:'Руки керамиста на гончарном круге, мягкий дневной свет из окна' },
+  { id:'img-saxophonist',     kind:'image', src:'../assets/img-saxophonist.webp', w:1205, h:1600, model:'kling-image-3.0', prompt:'Саксофонист на сцене джаз-клуба, тёплый луч прожектора, дым' },
+  { id:'img-cherries',        kind:'image', src:'../assets/img-cherries.webp',    w:1600, h:1600, model:'kling-image-3.0', prompt:'Вишни падают в расплавленный шоколад, скоростная макросъёмка, контровой свет' },
+  { id:'img-coupe',           kind:'image', src:'../assets/img-coupe.webp',       w:1600, h:900,  model:'seedream-5.0',    prompt:'Серебристое купе на прибрежной дороге, золотой час, плёночное зерно' },
+  { id:'img-salt-desert',     kind:'image', src:'../assets/img-salt-desert.webp', w:1280, h:1600, model:'seedream-5.0',    prompt:'Модель в скульптурном пальто цвета слоновой кости в соляной пустыне, золотой час' },
+  { id:'img-fisherman',       kind:'image', src:'../assets/img-fisherman.webp',   w:1280, h:1600, model:'seedream-5.0',    prompt:'Портрет пожилого северного рыбака, пасмурный свет, Kodak Portra 400' },
+  { id:'img-brutalist',       kind:'image', src:'../assets/img-brutalist.webp',   w:1600, h:900,  model:'seedream-5.0',    prompt:'Бетонная лестница в стиле брутализма, жёсткое утреннее солнце, фигура в красном' },
+];
+const ASSET = Object.fromEntries(ASSETS.map(a => [a.id, a]));
+const MODEL = Object.fromEntries(CONFIG.models.map(m => [m.id, m]));
+
+// Первое рождение (интро) и пул циклов ожидания: видео и изображения чередуются
+const INTRO_ITEMS = [
+  { asset:'vid-moscow-night', params:{ dur:10, res:'1080p' }, pose:'heroR' },
+  { asset:'vid-dancer',       params:{ dur:5,  res:'1080p' }, pose:'heroL' },
+  { asset:'vid-perfume-gold', params:{ dur:5,  res:'720p'  }, pose:'orbit' },
+  { asset:'img-saxophonist',  params:{ res:'2K' },            pose:'orbit' },
+  { asset:'img-coupe',        params:{ res:'2K', fmt:'16:9' },pose:'orbit' },
+];
+const CYCLE = [
+  { asset:'vid-taiga-dawn',      params:{ dur:10, res:'1080p' } },
+  { asset:'img-cherries',        params:{ res:'2K', fmt:'1:1' } },
+  { asset:'vid-salt-desert-i2v', params:{ dur:5,  res:'1080p' } },
+  { asset:'img-fisherman',       params:{ res:'2K', fmt:'4:5' } },
+  { asset:'vid-ceramics',        params:{ dur:5,  res:'720p' } },
+  { asset:'img-salt-desert',     params:{ res:'1K', fmt:'4:5' } },
+  { asset:'vid-moscow-night',    params:{ dur:5,  res:'1080p' } },
+  { asset:'img-brutalist',       params:{ res:'2K', fmt:'16:9' } },
+  { asset:'vid-perfume-gold',    params:{ dur:10, res:'720p' } },
+  { asset:'img-saxophonist',     params:{ res:'1K' } },
+  { asset:'vid-dancer',          params:{ dur:5,  res:'720p' } },
+  { asset:'img-coupe',           params:{ res:'1K', fmt:'16:9' } },
+];
+
+/* ---------- 2. Утилиты ---------- */
+const NBSP = ' ';
+const clamp = (v, a=0, b=1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => { t = clamp(t); return t * t * (3 - 2 * t); };
+const easeOut3 = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeOutExpo = t => (t = clamp(t)) >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const easeInOut3 = t => { t = clamp(t); return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2; };
+const easeIn3 = t => Math.pow(clamp(t), 3);
+const seg = (T, a, b) => clamp((T - a) / (b - a));
+function mulberry(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const hashStr = s => { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+
+/** Стоимость = priceRub × (видео ? секунды : 1) × коэффициент разрешения */
+function costOf(modelId, p){
+  const m = MODEL[modelId];
+  if (m.kind === 'video') return m.priceRub * (p.dur ?? 5) * (CONFIG.pricing.video.resolutions[p.res] ?? 1);
+  return m.priceRub * (CONFIG.pricing.image.resolutions[p.res] ?? 1);
+}
+/** 1 240,50 ₽ — NBSP между разрядами, запятая только при ненулевых копейках, NBSP перед ₽ */
+function fmtRub(v){
+  const cents = Math.round(v * 100);
+  const int = Math.floor(cents / 100), kop = cents % 100;
+  const s = String(int).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+  return (kop ? `${s},${String(kop).padStart(2, '0')}` : s) + NBSP + '₽';
+}
+const unitShort = m => m.kind === 'video' ? '₽/с' : '₽/изобр.';
+function paramsText(modelId, p, upper){
+  const m = MODEL[modelId];
+  const parts = m.kind === 'video' ? [`${p.dur}${NBSP}с`, p.res] : [p.res, ...(CONFIG.pricing.image.formats.includes(p.fmt) ? [p.fmt] : [])];
+  const s = parts.join(' · ');
+  return upper ? s.toUpperCase() : s;
+}
+const assetAspect = a => a.w / a.h;
+const sRGBToLinear = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+
+/* ---------- окружение ---------- */
+const QS = new URLSearchParams(location.search);
+const SEEK_T = QS.has('t') ? Math.max(0, parseFloat(QS.get('t')) || 0) : null;
+const START_DEV = QS.get('mode') === 'dev';
+const RM_QUERY = window.matchMedia('(prefers-reduced-motion: reduce)');
+let REDUCED = RM_QUERY.matches;
+const isMobile = () => window.innerWidth <= 900;
+const MOBILE = isMobile();
+const LIMITS = {
+  slots: 5,
+  perSlot: MOBILE ? 4096 : 14400,
+  dust: MOBILE ? 9000 : 30000,
+  tunnel: MOBILE ? 900 : 3200,
+  stars: MOBILE ? 900 : 2600,
+};
+const $ = id => document.getElementById(id);
+
+/* ---------- 3. Загрузка: fetch → Blob → objectURL, реальные байты для прелоадера ---------- */
+const media = {}; // id → { posterImg, img, video, videoReady, failed }
+const loadState = { total: 0, loaded: 0, done: false };
+const progressByUrl = new Map();
+const sizeByUrl = new Map();
+function onProgress(){
+  let l = 0, t = 0;
+  for (const [u, s] of sizeByUrl) { t += s; l += Math.min(progressByUrl.get(u) || 0, s); }
+  loadState.total = t; loadState.loaded = l;
+}
+async function fetchBlob(url, estimate){
+  sizeByUrl.set(url, estimate); onProgress();
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
+  const total = +res.headers.get('content-length') || estimate;
+  sizeByUrl.set(url, total);
+  if (!res.body || !res.body.getReader) { const b = await res.blob(); progressByUrl.set(url, total); onProgress(); return b; }
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; progressByUrl.set(url, got); onProgress(); }
+  progressByUrl.set(url, total); onProgress();
+  return new Blob(chunks, { type: res.headers.get('content-type') || '' });
+}
+async function loadImage(url, est){
+  const blob = await fetchBlob(url, est);
+  const img = new Image(); img.decoding = 'async';
+  img.src = URL.createObjectURL(blob);
+  await img.decode();
+  return img;
+}
+const videoHolder = document.createElement('div');
+videoHolder.setAttribute('aria-hidden', 'true');
+videoHolder.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none;z-index:-1';
+document.body.appendChild(videoHolder);
+async function loadVideo(a){
+  const blob = await fetchBlob(a.src, 1.5e6);
+  const v = document.createElement('video');
+  v.muted = true; v.defaultMuted = true; v.playsInline = true; v.loop = true; v.preload = 'auto';
+  v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+  v.src = URL.createObjectURL(blob);
+  videoHolder.appendChild(v);
+  await new Promise((ok, bad) => {
+    if (v.readyState >= 2) return ok();
+    v.addEventListener('loadeddata', ok, { once: true });
+    v.addEventListener('error', () => bad(new Error('video decode ' + a.id)), { once: true });
+  });
+  return v;
+}
+function loadAll(){
+  const jobs = [];
+  for (const a of ASSETS) {
+    const m = media[a.id] = { posterImg: null, img: null, video: null, failed: false, listeners: [] };
+    const posterUrl = a.kind === 'video' ? a.poster : a.src;
+    jobs.push(loadImage(posterUrl, a.kind === 'video' ? 6e4 : 1.3e5)
+      .then(img => { m.posterImg = img; if (a.kind === 'image') m.img = img; m.listeners.forEach(f => f('poster')); })
+      .catch(() => { m.failed = true; m.listeners.forEach(f => f('fail')); }));
+  }
+  // видео — вторым эшелоном, чтобы постеры (цвета частиц) пришли первыми
+  const videoJobs = Promise.allSettled(jobs).then(() => Promise.allSettled(ASSETS.filter(a => a.kind === 'video').map(a =>
+    loadVideo(a).then(v => { media[a.id].video = v; media[a.id].listeners.forEach(f => f('video')); })
+      .catch(() => { media[a.id].videoFailed = true; })
+  )));
+  return videoJobs.then(() => { loadState.done = true; onProgress(); });
+}
+
+/* ---------- 4. GLSL ---------- */
+const GLSL_NOISE = /* glsl */`
+  float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(hash12(i), hash12(i+vec2(1.,0.)), u.x), mix(hash12(i+vec2(0.,1.)), hash12(i+vec2(1.,1.)), u.x), u.y); }
+  // Поле проявления: одно и то же в шейдере частиц и в шейдере кадра —
+  // частица гаснет ровно тогда, когда под ней проявляется пиксель текстуры.
+  float revealField(vec2 uv, float aspect, float seed){
+    vec2 p = vec2(uv.x * aspect, uv.y) * 3.4 + seed * 17.0;
+    float n = vnoise(p) * 0.58 + vnoise(p * 2.63 + 3.1) * 0.28 + vnoise(p * 6.9 + 7.7) * 0.14;
+    float d = length((uv - 0.5) * vec2(aspect, 1.0)) / (0.5 * length(vec2(aspect, 1.0)));
+    return clamp(n * 0.72 + d * 0.34 - 0.03, 0.0, 1.0);
+  }
+  float revealMask(vec2 uv, float aspect, float seed, float r){
+    float t = mix(-0.09, 1.09, r);
+    return 1.0 - smoothstep(t - 0.012, t + 0.012, revealField(uv, aspect, seed));
+  }
+`;
+
+const PARTICLE_VS = /* glsl */`
+  uniform float uTime, uEvT, uUnfold, uCollapse, uExplode, uDustPull, uShock, uPR, uScale, uMouseK, uDim;
+  uniform mat3 uGal;
+  uniform mat4 uFMat[${LIMITS.slots}];
+  uniform float uForm[${LIMITS.slots}], uReveal[${LIMITS.slots}], uActive[${LIMITS.slots}], uFAspect[${LIMITS.slots}], uFSeed[${LIMITS.slots}], uFCols[${LIMITS.slots}];
+  uniform vec3 uMouseW;
+  uniform vec4 uSafe[4];
+  uniform float uSafeOn[4];
+  attribute vec3 aStart;
+  attribute vec3 aTarget;
+  attribute vec3 aColor;
+  attribute vec4 aSeed;
+  attribute vec2 aMeta;
+  varying vec3 vColor;
+  varying float vAlpha;
+  varying float vSquare;
+  ${GLSL_NOISE}
+  const vec3 IVORY = vec3(0.905, 0.863, 0.791);
+  const vec3 COOL  = vec3(0.275, 0.366, 0.571);
+
+  vec3 galaxy(vec3 s, float k){
+    float r0 = s.x;
+    float r = r0 * mix(0.035, 1.0, uUnfold);
+    float om = 0.075 / (0.35 + sqrt(r0));
+    float ang = s.y + uTime * om + (1.0 - uUnfold) * 3.2 / (0.5 + r0);
+    float kk = smoothstep(0.0, 0.55, k);           // спираль внутрь: аккреционный диск вокруг строки
+    float kc = smoothstep(0.55, 1.0, k);           // финальный коллапс в ядро
+    float rc = 1.25 + 1.9 * pow(fract(r0 * 7.13 + s.y), 1.6);
+    r = mix(r, rc, kk) * mix(1.0, 0.03, kc * kc);
+    ang += kk * (1.6 + 4.0 / (0.4 + r0)) + k * uEvT * (1.2 + 2.2 / (0.6 + rc)) + kc * 3.0;
+    float h = s.z * (1.0 - kk * 0.85) * mix(0.15, 1.0, uUnfold);
+    return uGal * vec3(cos(ang) * r, h, sin(ang) * r);
+  }
+
+  void main(){
+    float kind = aMeta.x;           // ≥0: частица кадра (слот), -1: пыль, -2: тоннель, -3: звёзды
+    vec3 p; vec3 col; float alpha; float size; vSquare = 0.0;
+    float safeK = 1.0;
+
+    if (kind >= -0.5) {
+      // ---------- частицы кадра: галактика → коллапс → выброс → сборка ----------
+      int fi = int(kind + 0.5);
+      float act = uActive[fi];
+      vec3 pc = galaxy(aStart, uCollapse);
+      float ex = 1.0 - pow(1.0 - uExplode, 3.0);
+      vec3 dir = normalize(vec3(aSeed.x * 2.0 - 1.0, (aSeed.y * 2.0 - 1.0) * 0.55, aSeed.w * 2.0 - 1.0) + 1e-4);
+      mat4 M = uFMat[fi];
+      vec3 tgt = (M * vec4(aTarget.x - 0.5, aTarget.y - 0.5, 0.0, 1.0)).xyz;
+      vec3 tdir = normalize(tgt + 1e-4);
+      vec3 burst = normalize(mix(dir, tdir, 0.62)) * length(tgt) * (0.35 + 0.85 * pow(aSeed.z, 0.8)) + dir * 0.6;
+      vec3 sw = vec3(sin(aSeed.x * 31.0 + uEvT * 1.3), cos(aSeed.y * 27.0 + uEvT * 1.1), sin(aSeed.z * 23.0 + uEvT * 0.9));
+      p = mix(pc, burst + sw * 0.3, ex);
+      float f = clamp((uForm[fi] - aMeta.y * 0.42) / 0.58, 0.0, 1.0);
+      float fe = 1.0 - pow(1.0 - f, 4.0);
+      p = mix(p, tgt, fe) + sw * (1.0 - fe) * fe * 0.9;
+      float rev = revealMask(aTarget.xy, uFAspect[fi], uFSeed[fi], uReveal[fi]);
+      vec3 dustC = mix(IVORY, COOL, smoothstep(1.5, 7.0, aStart.x));
+      col = mix(mix(dustC, aColor, 0.3), aColor, max(ex * 0.85, fe));
+      float a0 = (0.10 + 0.30 * aSeed.x * aSeed.x) * smoothstep(0.12, 0.8, uUnfold);
+      alpha = act * mix(mix(a0, 0.55, ex), 1.0, fe) * mix(1.0, aTarget.z, fe) * (1.0 - rev);
+      vec4 mvT = modelViewMatrix * vec4(p, 1.0);
+      float cellPx = length(M[0].xyz) * uScale / max(0.1, -mvT.z) / uFCols[fi];
+      size = mix((0.9 + 1.2 * aSeed.y) * uPR, cellPx * 1.08 + 0.55, fe);
+      size = mix(size, size * 1.6, ex * (1.0 - fe));
+      vSquare = fe;
+      safeK = 1.0 - fe;
+    } else if (kind > -1.5) {
+      // ---------- фоновая пыль: тусклая, холодная к краю, тёплая к ядру ----------
+      float pull = uDustPull;
+      p = galaxy(aStart, pull);
+      // ударная волна: радиальный толчок в плоскости галактики
+      float rr = length(p);
+      float w = exp(-pow((rr - uShock * 11.0) / 0.9, 2.0)) * (1.0 - uShock);
+      p += normalize(p + 1e-4) * w * 0.9;
+      // курсор — слабый гравитационный колодец
+      vec3 dm = uMouseW - p; p += dm * exp(-dot(dm, dm) * 0.45) * 0.22 * uMouseK;
+      col = mix(IVORY, COOL, smoothstep(1.2, 7.5, aStart.x) * (0.55 + 0.45 * aSeed.w));
+      float core = exp(-rr * 0.9) * 1.4;
+      alpha = (0.09 + 0.34 * aSeed.x * aSeed.x * aSeed.x + core * 0.22) * smoothstep(0.12, 0.8, uUnfold) * (1.0 + w * 2.5);
+      size = (0.7 + 1.05 * aSeed.y * aSeed.y) * uPR;
+    } else if (kind > -2.5) {
+      // ---------- тоннель: пыль, сквозь которую пролетает камера ----------
+      p = aStart;
+      col = mix(IVORY, COOL, aSeed.w);
+      alpha = (0.18 + 0.5 * aSeed.x) * (1.0 - smoothstep(0.85, 1.0, uUnfold));
+      vec4 mv0 = modelViewMatrix * vec4(p, 1.0);
+      size = clamp(2.4 / max(0.2, -mv0.z), 0.6, 3.0) * uPR;
+    } else {
+      // ---------- дальние звёзды ----------
+      p = aStart;
+      col = mix(IVORY, COOL, aSeed.w * 0.7);
+      float tw = 0.75 + 0.25 * sin(uTime * (0.6 + aSeed.y * 1.6) + aSeed.z * 40.0);
+      alpha = (0.05 + 0.22 * pow(aSeed.x, 3.0)) * tw * smoothstep(0.2, 0.9, uUnfold);
+      size = (0.6 + 0.9 * aSeed.y) * uPR;
+    }
+
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    // безопасные зоны: пыль отходит от текстовых блоков и гаснет под ними
+    if (safeK > 0.001) {
+      vec2 ndc = gl_Position.xy / gl_Position.w;
+      for (int i = 0; i < 4; i++) {
+        vec4 R = uSafe[i];
+        vec2 c = (R.xy + R.zw) * 0.5; vec2 hs = (R.zw - R.xy) * 0.5;
+        vec2 q = abs(ndc - c) - hs;
+        float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+        float inside = (1.0 - smoothstep(-0.05, 0.06, sd)) * safeK * uSafeOn[i];
+        alpha *= 1.0 - inside * 0.8;
+        gl_Position.xy += normalize(ndc - c + 1e-4) * inside * 0.03 * gl_Position.w;
+      }
+    }
+    vColor = col;
+    vAlpha = alpha * uDim;
+    gl_PointSize = alpha > 0.002 ? max(size, 0.5) : 0.0;
+  }
+`;
+const PARTICLE_FS = /* glsl */`
+  varying vec3 vColor; varying float vAlpha; varying float vSquare;
+  void main(){
+    vec2 c = gl_PointCoord - 0.5;
+    float d = mix(length(c), max(abs(c.x), abs(c.y)) * 0.98, vSquare);
+    float a = 1.0 - smoothstep(mix(0.05, 0.495, vSquare), mix(0.5, 0.5001, vSquare), d);
+    if (a * vAlpha < 0.002) discard;
+    gl_FragColor = vec4(vColor, a * vAlpha);
+  }
+`;
+
+const FRAME_VS = /* glsl */`
+  uniform float uBend;
+  varying vec2 vUv;
+  void main(){
+    vUv = uv;
+    vec3 p = position;
+    float x = p.x * 2.0;
+    p.z += uBend * (1.0 - x * x) * 0.09;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+const FRAME_FS = /* glsl */`
+  uniform sampler2D uTex;
+  uniform float uHasTex, uReveal, uOpacity, uDim, uAspect, uSeed, uTime, uHover;
+  uniform vec3 uProcA, uProcB, uProcC;
+  varying vec2 vUv;
+  ${GLSL_NOISE}
+  vec3 proceduralFrame(vec2 uv){
+    // процедурный кадр-заглушка (если ассет не загрузился): тёплый свет, дымка, зерно
+    float g = smoothstep(0.0, 1.0, uv.y + 0.12 * sin(uv.x * 3.0 + uSeed * 6.0 + uTime * 0.2));
+    vec3 c = mix(uProcA, uProcB, g);
+    vec2 P = vec2(0.3 + 0.4 * fract(uSeed * 3.7), 0.55 + 0.2 * fract(uSeed * 5.3));
+    c += uProcC * exp(-dot((uv - P) * vec2(uAspect, 1.0), (uv - P) * vec2(uAspect, 1.0)) * 6.0);
+    return c;
+  }
+  void main(){
+    vec2 sz = vec2(uAspect, 1.0);
+    vec2 q = abs(vUv - 0.5) * sz;
+    float r = 0.012;
+    float dd = length(max(q - (0.5 * sz - r), 0.0)) - r;
+    float corner = 1.0 - smoothstep(-0.002, 0.002, dd);
+    vec3 col = uHasTex > 0.5 ? texture2D(uTex, vUv).rgb : proceduralFrame(vUv);
+    float f = revealField(vUv, uAspect, uSeed);
+    float t = mix(-0.09, 1.09, uReveal);
+    float fw = max(fwidth(f) * 1.25, 0.0025);
+    float m = 1.0 - smoothstep(t - fw, t + fw, f);
+    float edge = (1.0 - smoothstep(0.0, fw * 1.6, abs(f - t))) * step(0.002, uReveal) * step(uReveal, 0.998);
+    col *= 1.0 - 0.62 * uDim;
+    col += vec3(1.0, 0.74, 0.48) * edge * 0.75;
+    float a = max(m, edge * 0.6) * corner * uOpacity;
+    if (a < 0.003) discard;
+    gl_FragColor = vec4(col, a);
+  }
+`;
+
+const CORE_VS = /* glsl */`
+  uniform float uSize; varying vec2 vUv;
+  void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0); mv.xy += position.xy * uSize; gl_Position = projectionMatrix * mv; }
+`;
+const CORE_FS = /* glsl */`
+  uniform float uI, uHot, uFl; varying vec2 vUv;
+  void main(){
+    float d = length(vUv - 0.5) * 2.0;
+    float point = exp(-d * d * 5800.0) * 2.4 * (0.6 + uHot);
+    float halo = exp(-d * d * 90.0) * 0.32 + 0.001 / (d * d + 0.001) * 0.10;
+    vec3 col = vec3(1.0, 0.95, 0.88) * point + vec3(1.0, 0.434, 0.162) * halo * (0.5 + uHot * 1.5);
+    col += vec3(0.30, 0.34, 0.46) * exp(-d * d * 5.0) * 0.022 + vec3(1.0, 0.434, 0.162) * exp(-d * d * 14.0) * 0.03;
+    col *= 1.0 - smoothstep(0.55, 1.0, d);
+    col *= uI;
+    col += vec3(1.0, 0.97, 0.92) * (exp(-d * d * 420.0) * 3.0 + exp(-d * d * 60.0) * 0.5) * uFl;   // белое каление
+    col += vec3(1.0, 0.52, 0.2) * exp(-d * d * 12.0) * 0.12 * uFl;                                 // янтарный ореол
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+const RING_VS = /* glsl */`
+  varying vec2 vP; uniform float uExtent;
+  void main(){ vP = position.xy * uExtent; gl_Position = projectionMatrix * modelViewMatrix * vec4(position * uExtent, 1.0); }
+`;
+const RING_FS = /* glsl */`
+  uniform float uR, uA; varying vec2 vP;
+  void main(){
+    float d = length(vP);
+    float w = 0.025 + uR * 0.012;
+    float ring = exp(-pow((d - uR) / w, 2.0));
+    gl_FragColor = vec4(vec3(1.0, 0.78, 0.55) * ring * uA, 1.0);
+  }
+`;
+const ORBIT_VS = /* glsl */`
+  attribute float aU; varying float vU; varying float vDepth;
+  void main(){ vU = aU; vec4 mv = modelViewMatrix * vec4(position, 1.0); vDepth = mv.z; gl_Position = projectionMatrix * mv; }
+`;
+const ORBIT_FS = /* glsl */`
+  uniform vec3 uColor; uniform float uAlpha, uHi, uDraw, uDash, uPulse, uPulseA, uCamZ, uDim;
+  uniform vec4 uSafePx[4];
+  varying float vU; varying float vDepth;
+  void main(){
+    float safe = 1.0;
+    for (int i = 0; i < 4; i++) { vec4 R = uSafePx[i]; vec2 q = max(R.xy - gl_FragCoord.xy, gl_FragCoord.xy - R.zw); float sd = max(q.x, q.y); safe *= mix(0.12, 1.0, smoothstep(-6.0, 26.0, sd)); }
+    float drawn = 1.0 - smoothstep(uDraw - 0.004, uDraw, vU);
+    float dash = uDash > 0.5 ? step(0.62, fract(vU * 300.0)) * 1.5 : 1.0;
+    float depth = clamp(1.0 - (-vDepth - uCamZ + 3.0) * 0.07, 0.3, 1.0);
+    float du = fract(vU - uPulse + 0.5) - 0.5;
+    float pulse = exp(-du * du * 5200.0) * uPulseA;
+    float head = exp(-pow((vU - uDraw) * 90.0, 2.0)) * step(uDraw, 0.999) * step(0.001, uDraw);
+    float a = (uAlpha * (1.0 + uHi * 1.6) * dash * depth * uDim) * drawn * safe;
+    vec3 c = uColor * a + vec3(1.0, 0.55, 0.25) * (pulse + head) * 1.4 * safe;
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+const FINAL_SHADER = {
+  uniforms: {
+    tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 },
+    uAberr: { value: 0 }, uFlash: { value: 0 }, uGrain: { value: 0.045 }, uVig: { value: 0.55 },
+    uCenter: { value: new THREE.Vector2(0.5, 0.55) },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uRes, uCenter; uniform float uTime, uAberr, uFlash, uGrain, uVig;
+    varying vec2 vUv;
+    float h(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    void main(){
+      vec2 uv = vUv;
+      vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+      vec3 col;
+      if (uAberr > 0.002) {
+        vec2 off = (uv - uCenter) * uAberr * 0.012;
+        col = vec3(texture2D(tDiffuse, uv + off).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - off).b);
+      } else col = texture2D(tDiffuse, uv).rgb;
+      float r = length((uv - uCenter) * asp);
+      // глубокий космос: #04050A по краям → #0A0D18 у сингулярности
+      col += vec3(0.024, 0.031, 0.055) * (1.0 - smoothstep(0.0, 1.15, r));
+      col += vec3(1.0, 0.98, 0.94) * uFlash * exp(-r * r * 30.0) * 1.5 + vec3(1.0, 0.62, 0.30) * uFlash * exp(-r * r * 5.0) * 0.18;
+      float v = 1.0 - smoothstep(0.25, 1.35, length((uv - 0.5) * asp * 0.95));
+      col *= mix(1.0 - uVig, 1.0, v);
+      float g = h(uv * uRes + fract(uTime * 7.31) * vec2(113.1, 71.7)) - 0.5;
+      col += g * uGrain * (0.55 + 0.45 * sqrt(clamp(dot(col, vec3(0.333)), 0.0, 1.0)));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+};
+
+/* ==========================================================================
+   5. Сцена
+   ========================================================================== */
+const canvas = $('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+renderer.setClearColor(0x04050a, 1);
+renderer.toneMapping = THREE.NoToneMapping;
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(DPR);
+
+const fxScene = new THREE.Scene();
+fxScene.background = new THREE.Color(0x04050a); // не setClearColor: иначе цвет очистки кодируется в sRGB дважды
+const frameScene = new THREE.Scene();
+const FOV = 32;
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
+const layoutCam = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
+const BASE_CAM_Z = 13;
+const TAN = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+let W = innerWidth, H = innerHeight;
+
+/* Плоскость галактики и орбит. На мобильном всё повёрнуто на 90° — вертикальные орбиты */
+const GAL_TILT = MOBILE ? 0.40 : 0.36, GAL_ROLL = MOBILE ? Math.PI / 2 - 0.16 : -0.05;
+const galMat4 = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(GAL_TILT, 0, GAL_ROLL, 'ZXY'));
+const galMat3 = new THREE.Matrix3().setFromMatrix4(galMat4);
+
+const ORBITS = (MOBILE ? [
+  { model:'seedance-2.5',    R:2.55, tilt:0.40, roll:Math.PI/2 - 0.10 },
+  { model:'kling-3.0',       R:3.05, tilt:0.36, roll:Math.PI/2 - 0.05 },
+  { model:'seedream-5.0',    R:1.45, tilt:0.62, roll:Math.PI/2 - 0.22 },
+  { model:'kling-image-3.0', R:1.95, tilt:0.54, roll:Math.PI/2 - 0.18 },
+] : [
+  { model:'seedance-2.5',    R:5.05, tilt:0.30, roll:-0.07 },
+  { model:'kling-3.0',       R:5.95, tilt:0.25, roll:-0.04 },
+  { model:'seedream-5.0',    R:3.95, tilt:0.74, roll: 0.20 },
+  { model:'kling-image-3.0', R:4.45, tilt:0.64, roll:-0.24 },
+]).map((o, i) => ({ ...o, i, kind: MODEL[o.model].kind,
+  m4: new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(o.tilt, 0, o.roll, 'ZXY')) }));
+const ORBIT_BY_MODEL = Object.fromEntries(ORBITS.map(o => [o.model, o]));
+const _v = new THREE.Vector3();
+function orbitPoint(o, th, out = new THREE.Vector3()){ return out.set(Math.cos(th) * o.R, 0, Math.sin(th) * o.R).applyMatrix4(o.m4); }
+
+/* ---------- частицы: один BufferGeometry + один ShaderMaterial ---------- */
+const N_SLOT = LIMITS.perSlot, N_SLOTS = LIMITS.slots;
+const N_DUST = LIMITS.dust, N_TUN = LIMITS.tunnel, N_STAR = LIMITS.stars;
+const N_ALL = N_SLOT * N_SLOTS + N_DUST + N_TUN + N_STAR;
+const pGeo = new THREE.BufferGeometry();
+const aStart = new Float32Array(N_ALL * 3), aTarget = new Float32Array(N_ALL * 3), aColor = new Float32Array(N_ALL * 3);
+const aSeed = new Float32Array(N_ALL * 4), aMeta = new Float32Array(N_ALL * 2);
+{
+  const rnd = mulberry(20261008);
+  const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const galaxyStart = (i) => {
+    const r0 = 0.25 + 8.6 * Math.pow(rnd(), 1.55);
+    const arm = rnd() < 0.5 ? 0 : Math.PI;
+    const onArm = rnd() < 0.62;
+    const ang = onArm ? arm + Math.log(r0 + 0.4) * 2.35 + gauss() * (0.22 + 0.03 * r0) : rnd() * Math.PI * 2;
+    aStart[i*3] = r0; aStart[i*3+1] = ang; aStart[i*3+2] = gauss() * (0.06 + 0.035 * r0);
+  };
+  for (let i = 0; i < N_ALL; i++) {
+    aSeed[i*4] = rnd(); aSeed[i*4+1] = rnd(); aSeed[i*4+2] = rnd(); aSeed[i*4+3] = rnd();
+  }
+  let i = 0;
+  for (let s = 0; s < N_SLOTS; s++) for (let k = 0; k < N_SLOT; k++, i++) {
+    galaxyStart(i); aMeta[i*2] = s; aMeta[i*2+1] = rnd();
+    aTarget[i*3] = rnd(); aTarget[i*3+1] = rnd(); aTarget[i*3+2] = 0;
+    aColor[i*3] = 0.8; aColor[i*3+1] = 0.75; aColor[i*3+2] = 0.7;
+  }
+  for (let k = 0; k < N_DUST; k++, i++) { galaxyStart(i); aMeta[i*2] = -1; }
+  for (let k = 0; k < N_TUN; k++, i++) {
+    const a = rnd() * Math.PI * 2, r = 0.5 + 5.5 * Math.sqrt(rnd());
+    aStart[i*3] = Math.cos(a) * r; aStart[i*3+1] = Math.sin(a) * r * 0.8; aStart[i*3+2] = 14 + rnd() * 32;
+    aMeta[i*2] = -2;
+  }
+  for (let k = 0; k < N_STAR; k++, i++) {
+    const u = rnd() * 2 - 1, a = rnd() * Math.PI * 2, r = 60 + rnd() * 70;
+    const s = Math.sqrt(1 - u * u);
+    aStart[i*3] = Math.cos(a) * s * r * 1.6; aStart[i*3+1] = u * r * 0.9; aStart[i*3+2] = -Math.abs(Math.sin(a) * s * r) - 20;
+    aMeta[i*2] = -3;
+  }
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(aStart, 3)); // для bounding sphere; позиция считается на GPU
+pGeo.setAttribute('aStart', new THREE.BufferAttribute(aStart, 3));
+const attrTarget = new THREE.BufferAttribute(aTarget, 3).setUsage(THREE.DynamicDrawUsage);
+const attrColor = new THREE.BufferAttribute(aColor, 3).setUsage(THREE.DynamicDrawUsage);
+const attrMeta = new THREE.BufferAttribute(aMeta, 2).setUsage(THREE.DynamicDrawUsage);
+pGeo.setAttribute('aTarget', attrTarget);
+pGeo.setAttribute('aColor', attrColor);
+pGeo.setAttribute('aSeed', new THREE.BufferAttribute(aSeed, 4));
+pGeo.setAttribute('aMeta', attrMeta);
+pGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 500);
+const fill = (n, f) => Array.from({ length: n }, f);
+const pUniforms = {
+  uTime: { value: 0 }, uEvT: { value: 0 }, uUnfold: { value: 0 }, uCollapse: { value: 0 }, uExplode: { value: 0 },
+  uDustPull: { value: 0 }, uShock: { value: 0 }, uPR: { value: DPR }, uScale: { value: 1 }, uMouseK: { value: 0 }, uDim: { value: 1 },
+  uGal: { value: galMat3 },
+  uFMat: { value: fill(N_SLOTS, () => new THREE.Matrix4()) },
+  uForm: { value: fill(N_SLOTS, () => 0) }, uReveal: { value: fill(N_SLOTS, () => 0) }, uActive: { value: fill(N_SLOTS, () => 0) },
+  uFAspect: { value: fill(N_SLOTS, () => 1) }, uFSeed: { value: fill(N_SLOTS, () => 0) }, uFCols: { value: fill(N_SLOTS, () => 100) },
+  uMouseW: { value: new THREE.Vector3(99, 99, 0) },
+  uSafe: { value: fill(4, () => new THREE.Vector4(9, 9, 9, 9)) }, uSafeOn: { value: [0, 0, 0, 0] },
+};
+const pMat = new THREE.ShaderMaterial({
+  uniforms: pUniforms, vertexShader: PARTICLE_VS, fragmentShader: PARTICLE_FS,
+  transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+});
+const points = new THREE.Points(pGeo, pMat);
+points.frustumCulled = false;
+fxScene.add(points);
+
+/** Переписать атрибуты слота под новый кадр: сетка внутри кадра + цвета пикселей постера */
+const sampleCanvas = document.createElement('canvas');
+const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+function procPalette(id){
+  const r = mulberry(hashStr(id));
+  return {
+    a: new THREE.Color().setRGB(0.012 + 0.01 * r(), 0.010, 0.012),
+    b: new THREE.Color().setRGB(0.30 + 0.2 * r(), 0.15 + 0.08 * r(), 0.06),
+    c: new THREE.Color().setRGB(0.75, 0.52 + 0.1 * r(), 0.32),
+    seed: r(),
+  };
+}
+function writeSlot(slot, assetId){
+  const a = ASSET[assetId], asp = assetAspect(a);
+  const cols = Math.floor(Math.sqrt(N_SLOT * asp)), rows = Math.floor(cols / asp);
+  const img = media[assetId] && media[assetId].posterImg;
+  let data = null;
+  if (img) {
+    sampleCanvas.width = cols; sampleCanvas.height = rows;
+    sampleCtx.imageSmoothingEnabled = true; sampleCtx.imageSmoothingQuality = 'high';
+    sampleCtx.drawImage(img, 0, 0, cols, rows);
+    data = sampleCtx.getImageData(0, 0, cols, rows).data;
+  }
+  const pal = procPalette(assetId);
+  const rnd = mulberry(hashStr(assetId) + slot);
+  const base = slot * N_SLOT;
+  for (let k = 0; k < N_SLOT; k++) {
+    const i = base + k;
+    if (k < cols * rows) {
+      const c = k % cols, r = Math.floor(k / cols);
+      const u = (c + 0.5) / cols, v = 1 - (r + 0.5) / rows;
+      aTarget[i*3] = u; aTarget[i*3+1] = v; aTarget[i*3+2] = 1;
+      if (data) {
+        const o = (r * cols + c) * 4;
+        aColor[i*3] = sRGBToLinear(data[o] / 255); aColor[i*3+1] = sRGBToLinear(data[o+1] / 255); aColor[i*3+2] = sRGBToLinear(data[o+2] / 255);
+      } else {
+        // та же формула, что proceduralFrame() во FRAME_FS
+        const g = smooth(v + 0.12 * Math.sin(u * 3 + pal.seed * 6));
+        const px = 0.3 + 0.4 * ((pal.seed * 3.7) % 1), py = 0.55 + 0.2 * ((pal.seed * 5.3) % 1);
+        const dx = (u - px) * asp, dy = v - py, e = Math.exp(-(dx*dx + dy*dy) * 6);
+        aColor[i*3] = lerp(pal.a.r, pal.b.r, g) + pal.c.r * e; aColor[i*3+1] = lerp(pal.a.g, pal.b.g, g) + pal.c.g * e; aColor[i*3+2] = lerp(pal.a.b, pal.b.b, g) + pal.c.b * e;
+      }
+      const dc = Math.hypot((u - 0.5) * asp, v - 0.5) / (0.5 * Math.hypot(asp, 1));
+      aMeta[i*2+1] = clamp(0.62 * dc + 0.38 * rnd());
+    } else {
+      aTarget[i*3] = rnd(); aTarget[i*3+1] = rnd(); aTarget[i*3+2] = 0;
+      aMeta[i*2+1] = rnd();
+    }
+  }
+  for (const at of [attrTarget, attrColor]) { at.clearUpdateRanges(); at.addUpdateRange(base * 3, N_SLOT * 3); at.needsUpdate = true; }
+  attrMeta.clearUpdateRanges(); attrMeta.addUpdateRange(base * 2, N_SLOT * 2); attrMeta.needsUpdate = true;
+  pUniforms.uFAspect.value[slot] = asp;
+  pUniforms.uFCols.value[slot] = cols;
+  pUniforms.uFSeed.value[slot] = (hashStr(assetId) % 997) / 997;
+  return { asset: assetId, real: !!data };
+}
+
+/* ---------- ядро сингулярности и ударная волна ---------- */
+const coreMat = new THREE.ShaderMaterial({
+  uniforms: { uSize: { value: 6.5 }, uI: { value: 1 }, uHot: { value: 0 }, uFl: { value: 0 } },
+  vertexShader: CORE_VS, fragmentShader: CORE_FS, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+});
+const core = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), coreMat);
+core.frustumCulled = false; core.renderOrder = 2;
+fxScene.add(core);
+const ringMat = new THREE.ShaderMaterial({
+  uniforms: { uR: { value: 0 }, uA: { value: 0 }, uExtent: { value: 14 } },
+  vertexShader: RING_VS, fragmentShader: RING_FS, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), ringMat);
+ring.rotation.setFromRotationMatrix(new THREE.Matrix4().multiplyMatrices(galMat4, new THREE.Matrix4().makeRotationX(-Math.PI / 2)));
+ring.frustumCulled = false; ring.visible = false;
+fxScene.add(ring);
+
+/* ---------- орбиты: тонкие 3D-эллипсы; видео — сплошные, изображения — пунктир ---------- */
+const ORBIT_SEG = 360;
+const SAFE_PX = fill(4, () => new THREE.Vector4(-1, -1, -1, -1)); // прямоугольники текста в пикселях буфера (y снизу)
+for (const o of ORBITS) {
+  const pos = new Float32Array((ORBIT_SEG + 1) * 3), us = new Float32Array(ORBIT_SEG + 1);
+  for (let k = 0; k <= ORBIT_SEG; k++) {
+    const th = (k / ORBIT_SEG) * Math.PI * 2;
+    orbitPoint(o, th, _v); pos[k*3] = _v.x; pos[k*3+1] = _v.y; pos[k*3+2] = _v.z; us[k] = k / ORBIT_SEG;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aU', new THREE.BufferAttribute(us, 1));
+  o.mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: o.kind === 'video' ? new THREE.Color(0.86, 0.80, 0.72) : new THREE.Color(0.42, 0.52, 0.72) },
+      uAlpha: { value: o.kind === 'video' ? 0.26 : 0.34 }, uHi: { value: 0 }, uDraw: { value: 0 }, uDash: { value: o.kind === 'video' ? 0 : 1 },
+      uPulse: { value: 0 }, uPulseA: { value: 0 }, uCamZ: { value: BASE_CAM_Z }, uDim: { value: 1 }, uSafePx: { value: SAFE_PX },
+    },
+    vertexShader: ORBIT_VS, fragmentShader: ORBIT_FS, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+  });
+  o.line = new THREE.Line(g, o.mat);
+  o.line.frustumCulled = false;
+  o.hi = 0; o.pulseT = -10;
+  fxScene.add(o.line);
+}
+
+/* ---------- кадры: плоскость + dissolve-шейдер; изгиб при наведении ---------- */
+const frameGeo = new THREE.PlaneGeometry(1, 1, 24, 1);
+const texCache = {};
+function makeTex(img){ const t = new THREE.Texture(img); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.needsUpdate = true; return t; }
+function bestTexture(assetId){
+  const m = media[assetId]; if (!m) return null;
+  const c = texCache[assetId] || (texCache[assetId] = {});
+  if (m.video && !m.videoFailed) {
+    if (!c.video) {
+      c.video = new THREE.VideoTexture(m.video); c.video.colorSpace = THREE.SRGBColorSpace;
+      m.video.addEventListener('seeked', () => { c.video.needsUpdate = true; });
+    }
+    return c.video;
+  }
+  const img = m.img || m.posterImg;
+  if (img) { if (!c.img) c.img = makeTex(img); return c.img; }
+  return null;
+}
+const frames = [];
+for (let i = 0; i < N_SLOTS; i++) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTex: { value: null }, uHasTex: { value: 0 }, uReveal: { value: 0 }, uOpacity: { value: 1 }, uDim: { value: 0 },
+      uAspect: { value: 1 }, uSeed: { value: 0 }, uTime: { value: 0 }, uHover: { value: 0 }, uBend: { value: 0 },
+      uProcA: { value: new THREE.Color() }, uProcB: { value: new THREE.Color() }, uProcC: { value: new THREE.Color() },
+    },
+    vertexShader: FRAME_VS, fragmentShader: FRAME_FS, transparent: true, depthWrite: false, depthTest: false,
+  });
+  const mesh = new THREE.Mesh(frameGeo, mat);
+  mesh.visible = false; mesh.frustumCulled = false;
+  frameScene.add(mesh);
+  frames.push({ i, mesh, mat, shown: null, hover: 0, fwd: 0, dim: 0, cap: null, rect: null, item: null });
+}
+/* ---------- подвесы: тонкая нить от узла на орбите к кадру ---------- */
+const tetherPos = new Float32Array(N_SLOTS * 6), tetherA = new Float32Array(N_SLOTS * 2);
+const nodePos = new Float32Array(N_SLOTS * 3), nodeA = new Float32Array(N_SLOTS);
+const tetherGeo = new THREE.BufferGeometry();
+tetherGeo.setAttribute('position', new THREE.BufferAttribute(tetherPos, 3).setUsage(THREE.DynamicDrawUsage));
+tetherGeo.setAttribute('aA', new THREE.BufferAttribute(tetherA, 1).setUsage(THREE.DynamicDrawUsage));
+const nodeGeo = new THREE.BufferGeometry();
+nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodePos, 3).setUsage(THREE.DynamicDrawUsage));
+nodeGeo.setAttribute('aA', new THREE.BufferAttribute(nodeA, 1).setUsage(THREE.DynamicDrawUsage));
+const tetherMat = new THREE.ShaderMaterial({
+  vertexShader: `attribute float aA; varying float vA; void main(){ vA = aA; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `varying float vA; void main(){ gl_FragColor = vec4(vec3(0.86, 0.80, 0.72) * vA, 1.0); }`,
+  transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const nodeMat = new THREE.ShaderMaterial({
+  uniforms: { uPR: { value: DPR } },
+  vertexShader: `uniform float uPR; attribute float aA; varying float vA; void main(){ vA = aA; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = 5.0 * uPR; }`,
+  fragmentShader: `varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); float a = 1.0 - smoothstep(0.32, 0.5, d); if (a * vA < 0.003) discard; gl_FragColor = vec4(vec3(0.95, 0.90, 0.82) * a * vA, 1.0); }`,
+  transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const tethers = new THREE.LineSegments(tetherGeo, tetherMat); tethers.frustumCulled = false; fxScene.add(tethers);
+const nodes = new THREE.Points(nodeGeo, nodeMat); nodes.frustumCulled = false; fxScene.add(nodes);
+function setTether(i, a, b, alpha){
+  tetherPos.set([a.x, a.y, a.z, b.x, b.y, b.z], i * 6);
+  tetherA[i * 2] = alpha * 0.9; tetherA[i * 2 + 1] = alpha * 0.35;
+  nodePos.set([a.x, a.y, a.z], i * 3); nodeA[i] = alpha * 1.4;
+}
+
+function setFrameAsset(f, assetId){
+  if (f.shown === assetId) return;
+  f.shown = assetId;
+  const a = ASSET[assetId], u = f.mat.uniforms;
+  u.uAspect.value = assetAspect(a);
+  u.uSeed.value = (hashStr(assetId) % 997) / 997;
+  const pal = procPalette(assetId);
+  u.uProcA.value.copy(pal.a); u.uProcB.value.copy(pal.b); u.uProcC.value.copy(pal.c);
+  u.uTex.value = null; u.uHasTex.value = 0;
+}
+
+/* ---------- пост: bloom только на горячем, кадры поверх bloom, зерно/виньетка/аберрация ---------- */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(fxScene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.6, 0.9);
+const bloomSetSize = bloom.setSize.bind(bloom);
+bloom.setSize = (w, h) => bloomSetSize(Math.round(w * 0.6), Math.round(h * 0.6));
+composer.addPass(bloom);
+const framesPass = new RenderPass(frameScene, camera);
+framesPass.clear = false; framesPass.clearDepth = false;
+composer.addPass(framesPass);
+composer.addPass(new OutputPass());
+const finalPass = new ShaderPass(FINAL_SHADER);
+composer.addPass(finalPass);
+
+/* ---------- проекции ---------- */
+const sing = { x: 0, y: 0 };
+function applyViewOffset(cam){ cam.setViewOffset(W, H, W / 2 - sing.x, H / 2 - sing.y, W, H); cam.updateProjectionMatrix(); }
+function toScreen(v, cam = camera, out = {}){
+  _v.copy(v).project(cam);
+  out.x = (_v.x * 0.5 + 0.5) * W; out.y = (-_v.y * 0.5 + 0.5) * H; out.z = _v.z;
+  return out;
+}
+function pxPerUnit(z, cam = layoutCam){ return H / (2 * (cam.position.z - z) * TAN); }
+function screenToWorld(px, py, z, cam = layoutCam){
+  const p = new THREE.Vector3((px / W) * 2 - 1, -(py / H) * 2 + 1, 0.5).unproject(cam);
+  const d = p.sub(cam.position).normalize();
+  return cam.position.clone().addScaledVector(d, (z - cam.position.z) / d.z);
+}
+
+/* ==========================================================================
+   6. Расписание рождений — детерминированное: всё состояние выводится из T
+   ========================================================================== */
+const events = [];
+const slotHistory = Array.from({ length: N_SLOTS }, () => []);
+const AUTO_FIRST = 16, AUTO_PERIOD = 12;
+let nextAutoT = AUTO_FIRST, cycleIdx = 0;
+
+function resolvePose(name, kind){
+  if (!MOBILE) return name;
+  if (kind !== 'intro' && (name === 'heroL' || name === 'heroR')) return 'hero';
+  return name === 'heroR' || name === 'hero' ? 'hero' : 'orbit';
+}
+function pickSlot(assetId){
+  let empty = -1, same = -1, oldest = -1, oldestKey = Infinity;
+  for (let s = 0; s < N_SLOTS; s++) {
+    const it = slotHistory[s][slotHistory[s].length - 1];
+    if (!it) { if (empty < 0) empty = s; continue; }
+    if (it.asset === assetId) same = s;
+    const key = it.ev.t0 - s * 1e-3;
+    if (key < oldestKey) { oldestKey = key; oldest = s; }
+  }
+  return same >= 0 ? same : empty >= 0 ? empty : oldest;
+}
+function addEvent(kind, t0, specs, meta = {}){
+  const ev = { idx: events.length, kind, t0, items: [] };
+  if (kind === 'intro') Object.assign(ev, { tType0: 2.2, tType1: 3.25, tPrice: 3.0, tPress: 3.5, tFlash: 3.9 });
+  else if (kind === 'auto') Object.assign(ev, { tType0: t0 + 0.2, tType1: t0 + 1.35, tPrice: t0 + 0.15, tPress: t0 + 1.62, tFlash: t0 + 2.0 });
+  else Object.assign(ev, { tType0: t0, tType1: t0, tPrice: t0, tPress: t0, tFlash: t0 + 0.85 });
+  specs.forEach((sp, k) => {
+    const a = ASSET[sp.asset], slot = pickSlot(sp.asset);
+    const it = {
+      ev, k, slot, asset: sp.asset, model: a.model, params: sp.params, cost: costOf(a.model, sp.params),
+      prompt: meta.itemPrompt || a.prompt, pose: resolvePose(sp.pose || 'orbit', kind), orbit: ORBIT_BY_MODEL[a.model],
+      tForm0: ev.tFlash + 0.1 + k * 0.06, formDur: 1.3,
+      tRev0: ev.tFlash + 0.92 + k * 0.08, revDur: 0.95,
+      settleDur: 2.9, tEnd: Infinity, num: 427 + ev.idx * 7 + k,
+    };
+    it.tSettle0 = it.pose === 'orbit' ? -1e9 : (kind === 'intro' ? 8.3 + k * 0.45 : ev.tFlash + 4.7);
+    it.tOrbit = it.pose === 'orbit' ? ev.tFlash : it.tSettle0 + it.settleDur;
+    it.prev = slotHistory[slot][slotHistory[slot].length - 1] || null;
+    if (it.prev) it.prev.tEnd = t0;
+    it.driftW = 0.17 + 0.05 * ((slot * 7) % 3);
+    it.driftP = slot * 1.7 + ev.idx;
+    slotHistory[slot].push(it);
+    ev.items.push(it);
+  });
+  ev.model = meta.model || ev.items[0].model;
+  ev.params = meta.params || ev.items[0].params;
+  ev.prompt = meta.prompt || ev.items[0].prompt;
+  ev.cost = costOf(ev.model, ev.params);
+  events.push(ev);
+  return ev;
+}
+function ensureSchedule(T){
+  while (nextAutoT <= T + 1e-6) {
+    const spec = CYCLE[cycleIdx % CYCLE.length];
+    addEvent('auto', nextAutoT, [{ ...spec, pose: cycleIdx % 2 === 0 ? 'heroL' : 'heroR' }]);
+    cycleIdx++; nextAutoT += AUTO_PERIOD;
+  }
+}
+function eventAt(T){ let e = null; for (const ev of events) { if (ev.t0 <= T + 1e-6) e = ev; else break; } return e; }
+function itemAt(slot, T){ const h = slotHistory[slot]; for (let j = h.length - 1; j >= 0; j--) if (h[j].ev.t0 <= T + 1e-6) return h[j]; return null; }
+const alive = (it, T) => it.ev.t0 <= T + 1e-6 && T < it.tEnd;
+
+/* ==========================================================================
+   Раскладка: безопасные зоны текста, слоты «героя», якоря на орбитах
+   ========================================================================== */
+let L = null, layoutVersion = 0, L_legend = null;
+const rectOf = el => { const r = el.getBoundingClientRect(); return { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom }; };
+const unionR = (...rs) => rs.filter(r => r.x1 - r.x0 > 0.5 || r.y1 - r.y0 > 0.5).reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) }));
+const padR = (r, p) => ({ x0: r.x0 - p, y0: r.y0 - p, x1: r.x1 + p, y1: r.y1 + p });
+const areaR = r => Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0);
+const interR = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+
+function computeLayout(){
+  W = innerWidth; H = innerHeight;
+  renderer.setSize(W, H);
+  composer.setSize(W, H);
+  const panelR = rectOf($('panel'));
+  sing.x = (panelR.x0 + panelR.x1) / 2; sing.y = (panelR.y0 + panelR.y1) / 2;
+  for (const c of [camera, layoutCam]) { c.aspect = W / H; applyViewOffset(c); }
+  layoutCam.position.set(0, 0, BASE_CAM_Z); layoutCam.lookAt(0, 0, 0); layoutCam.updateMatrixWorld();
+  const gut = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gutter')) || 48;
+  const R = {
+    h1: rectOf($('h1')), aside: rectOf($('aside')), overline: rectOf($('overline')), trust: rectOf($('trust')), nav: rectOf($('nav')),
+    console: unionR(panelR, rectOf($('mode')), rectOf($('quote'))),
+  };
+  const navParts = [document.querySelector('.logo'), document.querySelector('.nav-links'), document.querySelector('.nav-right'), $('overline')]
+    .map(el => rectOf(el)).filter(r => r.x1 - r.x0 > 2 && r.y1 > 0).map(r => padR(r, 14));
+  const text = [padR(R.h1, 14), padR(R.console, 16), padR(R.aside, 14), { x0: 0, y0: R.trust.y0 - 6, x1: W, y1: H }, ...navParts, { x0: 0, y0: 0, x1: W, y1: R.nav.y1 - 4 }];
+  const top = R.overline.y1 + 30, bottom = Math.min(R.h1.y0, R.aside.y0) - 26;
+  const cL = R.console.x0, cR = R.console.x1;
+  const slots = MOBILE ? {
+    hero: { x0: Math.max(gut, MARGIN), x1: W - Math.max(gut, MARGIN), y0: R.h1.y1 + 16, y1: R.console.y0 - 30, z: 0.8, maxW: W - 2 * Math.max(gut, MARGIN), maxH: H * 0.3 },
+  } : {
+    heroR: { x0: cR + 34, x1: W - Math.max(gut, MARGIN), y0: top, y1: bottom, cy: sing.y - 18, z: 0.8, maxW: W * 0.3, maxH: H * 0.44 },
+    heroL: { x0: Math.max(gut, MARGIN), x1: cL - 44, y0: top, y1: bottom, cy: sing.y - 4, z: 0.8, maxW: W * 0.29, maxH: H * 0.42 },
+  };
+  if (MOBILE) {
+    const lt = R.h1.y1 + 10;
+    L_legend = { x0: 0, y0: lt, x1: W, y1: lt + 46 };
+    text.push(L_legend);
+    slots.hero.y0 = L_legend.y1 + 8;
+  }
+  L = { R, text, slots, gut, heroZones: MOBILE ? [slots.hero] : [slots.heroR, slots.heroL] };
+  // безопасные зоны для частиц (NDC): H1, консоль, колонка справа, строка доверия
+  const toNdc = r => new THREE.Vector4(r.x0 / W * 2 - 1, 1 - r.y1 / H * 2, r.x1 / W * 2 - 1, 1 - r.y0 / H * 2);
+  [R.h1, R.console, R.aside, R.trust].forEach((r, i) => pUniforms.uSafe.value[i].copy(toNdc(padR(r, 10))));
+  [R.h1, R.console, R.aside, R.trust].forEach((r, i) => SAFE_PX[i].set(r.x0 * DPR, (H - r.y1) * DPR, r.x1 * DPR, (H - r.y0) * DPR));
+  pUniforms.uScale.value = (H * DPR / 2) / TAN;
+  pUniforms.uPR.value = DPR;
+  finalPass.uniforms.uRes.value.set(W * DPR, H * DPR);
+  finalPass.uniforms.uCenter.value.set(sing.x / W, 1 - sing.y / H);
+  const pre = $('pre'); pre.style.top = `${sing.y + 22}px`; pre.style.left = `${sing.x}px`;
+  layoutVersion++;
+  placeOrbitLabels();
+}
+
+function heroPoseOf(it){
+  if (it.heroV === layoutVersion) return it.heroPose;
+  const asp = assetAspect(ASSET[it.asset]);
+  const r = L.slots[it.pose] || L.slots.heroR || L.slots.hero;
+  let w = Math.min(r.x1 - r.x0, (r.y1 - r.y0) * asp, r.maxW, r.maxH * asp);
+  const h = w / asp;
+  const cx = r.ax === 'r' ? r.x1 - w / 2 : r.ax === 'l' ? r.x0 + w / 2 : (r.x0 + r.x1) / 2;
+  const cy = clamp(r.cy ?? (r.y0 + r.y1) / 2, r.y0 + h / 2, Math.max(r.y0 + h / 2, r.y1 - h / 2));
+  const p = screenToWorld(cx, cy, r.z);
+  it.heroPose = { p, s: (w / pxPerUnit(r.z)) / Math.sqrt(asp) };
+  it.heroV = layoutVersion;
+  return it.heroPose;
+}
+const orbitSize = it => (MOBILE ? (it.orbit.kind === 'video' ? 0.95 : 0.84) : (it.orbit.kind === 'video' ? 1.5 : 1.34));
+
+function rectFor(p, s, asp){
+  const sc = toScreen(p, layoutCam);
+  const k = pxPerUnit(p.z);
+  const w = s * Math.sqrt(asp) * k, h = s / Math.sqrt(asp) * k;
+  return { x0: sc.x - w / 2, y0: sc.y - h / 2, x1: sc.x + w / 2, y1: sc.y + h / 2, cx: sc.x, cy: sc.y };
+}
+
+/* ---------- решатель раскладки: проекции кадров на экран, жёсткие правила ----------
+   (а) кадры перекрывают друг друга не больше чем на ~6 % площади меньшего;
+   (б) кадр и его подпись — внутри экрана с полем ≥ 24 px и вне текста (навигация, H1, колонка, строка генерации);
+   (в) подпись не ложится на соседний кадр;
+   (г) новорождённый занимает место «героя» — соседи заранее уходят по своим орбитам или уменьшаются.
+   Решение пересчитывается в моменты смены конфигурации и детерминированно выводится из расписания. */
+const DRIFT = 0.03, MOVE_DUR = 2.6;
+const MARGIN = MOBILE ? 18 : 24;
+const SHRINK = MOBILE ? [1, 0.88, 0.76, 0.64, 0.54] : [1, 0.9, 0.8, 0.7, 0.62, 0.54];
+const capW = (it, big) => (MODEL[it.model].name.length + (big ? 26 : 16)) * (big ? 7.4 : 6.6);
+const OFFS = [0, 0.55, -0.55, 1.1, -1.1, 1.6, -1.6];           // «подвес» кадра над/под орбитой, мир. ед.
+const offVec = (d, out) => (MOBILE ? out.set(d, 0, 0) : out.set(0, d, 0));
+const _off = new THREE.Vector3();
+function framePoint(it, th, dy, out = new THREE.Vector3()){ return orbitPoint(it.orbit, th, out).add(offVec(dy, _off)); }
+function boxAt(it, th, f, dy = 0){
+  const asp = assetAspect(ASSET[it.asset]), s = orbitSize(it) * f;
+  const a = rectFor(framePoint(it, th - DRIFT, dy), s, asp);
+  const b = rectFor(framePoint(it, th + DRIFT, dy), s, asp);
+  const c = rectFor(framePoint(it, th, dy), s, asp);
+  const fr = { x0: Math.min(a.x0, b.x0, c.x0), y0: Math.min(a.y0, b.y0, c.y0), x1: Math.max(a.x1, b.x1, c.x1), y1: Math.max(a.y1, b.y1, c.y1) };
+  return { fr, cap: { x0: fr.x0, y0: fr.y1 + 4, x1: Math.max(fr.x1, fr.x0 + capW(it)), y1: fr.y1 + 22 }, cx: c.cx, cy: c.cy, area: (c.x1 - c.x0) * (c.y1 - c.y0) };
+}
+function heroBox(it){
+  const hp = heroPoseOf(it), r = rectFor(hp.p, hp.s, assetAspect(ASSET[it.asset]));
+  return { fr: r, cap: { x0: r.x0, y0: r.y1 + 4, x1: Math.max(r.x1, r.x0 + capW(it, true)), y1: r.y1 + 22 }, cx: r.cx, cy: r.cy, area: areaR(r) };
+}
+function feasible(bx, placed){
+  const vp = { x0: MARGIN, y0: MARGIN, x1: W - MARGIN, y1: H - MARGIN };
+  for (const r of [bx.fr, bx.cap]) if (r.x0 < vp.x0 || r.y0 < vp.y0 || r.x1 > vp.x1 || r.y1 > vp.y1) return false;
+  for (const t of L.text) if (interR(bx.fr, t) > 0 || interR(bx.cap, t) > 0) return false;
+  if (!MOBILE) for (const o of ORBITS) if (o.labelRect) { const lr = padR(o.labelRect, 8); if (interR(bx.fr, lr) > 0 || interR(bx.cap, lr) > 0) return false; }
+  for (const o of placed) {
+    if (interR(padR(bx.fr, 8), o.fr) > 0.06 * Math.min(bx.area, o.area)) return false;
+    if (interR(padR(bx.cap, 8), o.fr) > 0 || interR(padR(bx.fr, 6), o.cap) > 0 || interR(padR(bx.cap, 10), o.cap) > 0) return false;
+  }
+  return true;
+}
+const isHeroAt = (it, t) => it.pose !== 'orbit' && t < it.tSettle0 && (it.ev.kind === 'intro' || t >= it.ev.tFlash - 0.6 - 1e-6);
+let cfgVersion = 0, cfgCache = { key: '', list: [] };
+function configTimes(){
+  const ts = new Set([0]);
+  for (const ev of events) {
+    if (ev.kind !== 'intro') ts.add(+(ev.tFlash - 0.6).toFixed(4));
+    for (const it of ev.items) if (it.pose !== 'orbit') ts.add(+it.tSettle0.toFixed(4));
+  }
+  return [...ts].sort((a, b) => a - b);
+}
+function lastPlacement(list, it){ for (let j = list.length - 1; j >= 0; j--) { const p = list[j].place.get(it); if (p) return p; } return null; }
+function solveConfig(tc, list){
+  const items = [];
+  for (const h of slotHistory) for (const it of h) if (alive(it, tc)) items.push(it);
+  const placed = [], place = new Map();
+  for (const it of items) if (isHeroAt(it, tc)) placed.push(heroBox(it));
+  const orbitItems = items.filter(it => !isHeroAt(it, tc));
+  // сначала только что осевший новорождённый (ближе к своему месту героя), затем остальные — от новых к старым
+  const settling = it => it.pose !== 'orbit' && Math.abs(it.tSettle0 - tc) < 1e-3;
+  orbitItems.sort((a, b) => (settling(b) - settling(a)) || (b.ev.idx - a.ev.idx) || (a.k - b.k));
+  for (const it of orbitItems) {
+    const prev = lastPlacement(list, it);
+    let ref = null;
+    if (prev) { const b = boxAt(it, prev.th, prev.f, prev.dy); ref = { x: b.cx, y: b.cy, th: prev.th }; }
+    else if (it.pose !== 'orbit') { const hb = heroBox(it); ref = { x: hb.cx, y: hb.cy }; }
+    let best = null, bestS = Infinity;
+    const STEPS = 120;
+    for (const dy of OFFS) for (const f of SHRINK) for (let j = 0; j < STEPS; j++) {
+      const th = (j / STEPS) * Math.PI * 2;
+      const bx = boxAt(it, th, f, dy);
+      if (!feasible(bx, placed)) continue;
+      let sc = (1 - f) * 520 + Math.abs(dy) * 70;
+      if (ref) sc += Math.hypot(bx.cx - ref.x, bx.cy - ref.y);
+      else { let md = 420; for (const o of placed) md = Math.min(md, Math.hypot(bx.cx - o.cx, bx.cy - o.cy)); sc -= md * 0.6; }
+      if (!MOBILE) { let same = 0; for (const o of placed) if ((o.cx < W / 2) === (bx.cx < W / 2)) same++; sc += same * 18; }
+      if (sc < bestS) { bestS = sc; best = { th, f, dy, vis: 1, bx }; }
+    }
+    if (!best) best = { th: prev ? prev.th : (ref && ref.th) || 0, f: SHRINK[SHRINK.length - 1], dy: prev ? prev.dy : 0, vis: 0, bx: null }; // некуда — кадр уходит в глубину и гаснет
+    place.set(it, best);
+    if (best.bx) placed.push(best.bx);
+  }
+  return { tc, place, heroes: items.filter(it => isHeroAt(it, tc)) };
+}
+function configs(){
+  const key = `${layoutVersion}|${events.length}|${cfgVersion}`;
+  if (cfgCache.key === key) return cfgCache.list;
+  const list = [];
+  for (const tc of configTimes()) list.push(solveConfig(tc, list));
+  cfgCache = { key, list };
+  return list;
+}
+function configIndexAt(T){ const cs = configs(); let i = 0; for (let j = 0; j < cs.length; j++) if (cs[j].tc <= T + 1e-6) i = j; return i; }
+const angLerp = (a, b, k) => a + ((((b - a) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI) * k;
+/** Положение на орбите по конфигурациям: переход между решениями — гравитационный easing вдоль орбиты */
+function orbitState(it, T){
+  const cs = configs(); const i = configIndexAt(T);
+  let ci = -1; for (let j = i; j >= 0; j--) if (cs[j].place.has(it)) { ci = j; break; }
+  if (ci < 0) { for (let j = 0; j < cs.length; j++) if (cs[j].place.has(it)) { ci = j; break; } }
+  if (ci < 0) return { th: 0, f: 1, dy: 0, vis: 0 };
+  const cur = cs[ci].place.get(it);
+  let pj = -1; for (let j = ci - 1; j >= 0; j--) if (cs[j].place.has(it)) { pj = j; break; }
+  if (pj < 0) return { th: cur.th, f: cur.f, dy: cur.dy, vis: cur.vis };
+  const prev = cs[pj].place.get(it);
+  // появление (из скрытого) — после того, как соседи разошлись; уход — сразу
+  const appear = prev.vis < 0.5 && cur.vis > 0.5;
+  const k = appear ? easeInOut3(seg(T, cs[ci].tc + 2.9, cs[ci].tc + 2.9 + 1.2)) : easeInOut3(seg(T, cs[ci].tc, cs[ci].tc + MOVE_DUR));
+  if (appear) return { th: cur.th, f: cur.f, dy: cur.dy, vis: k };
+  return { th: angLerp(prev.th, cur.th, k), f: lerp(prev.f, cur.f, k), dy: lerp(prev.dy, cur.dy, k), vis: lerp(prev.vis, cur.vis, k) };
+}
+function poseAt(it, T, out = { p: new THREE.Vector3(), a: new THREE.Vector3(), s: 1, k: 1, vis: 1, dy: 0 }){
+  const st = orbitState(it, T);
+  const th = st.th + DRIFT * 0.9 * Math.sin((T - it.ev.tFlash) * it.driftW + it.driftP);
+  orbitPoint(it.orbit, th, out.a);                     // точка на орбите (узел подвеса)
+  out.p.copy(out.a).add(offVec(st.dy, _off));
+  out.s = orbitSize(it) * st.f; out.k = 1; out.vis = st.vis; out.dy = st.dy;
+  if (it.pose === 'orbit') return out;
+  const k = easeInOut3(seg(T, it.tSettle0, it.tSettle0 + it.settleDur));
+  if (k >= 1) return out;
+  const hp = heroPoseOf(it);
+  out.p.lerpVectors(hp.p, out.p, k);
+  out.p.z += Math.sin(k * Math.PI) * 0.9;
+  out.s = lerp(hp.s, out.s, k); out.k = k; out.vis = lerp(1, st.vis, k); out.dy *= k;
+  return out;
+}
+
+/* ==========================================================================
+   7. Интерфейс: строка генерации, терминал, подписи орбит и кадров
+   ========================================================================== */
+$('brandName').textContent = CONFIG.brand;
+$('credits').textContent = String(CONFIG.starterCredits);
+const promptEl = $('prompt'), selModel = $('selModel'), selA = $('selA'), selB = $('selB'), goPrice = $('goPrice'), goBtn = $('go');
+const panel = $('panel'), quoteL = $('quoteL');
+const ui = { model: 'seedance-2.5', params: { dur: 10, res: '1080p', fmt: '16:9' }, userTouched: false, dev: START_DEV };
+{
+  const groups = { video: 'Видео', image: 'Изображения' };
+  for (const kind of ['video', 'image']) {
+    const og = document.createElement('optgroup'); og.label = groups[kind];
+    for (const m of CONFIG.models.filter(x => x.kind === kind)) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; og.appendChild(o); }
+    selModel.appendChild(og);
+  }
+}
+function fillParamSelects(){
+  const m = MODEL[ui.model];
+  const opts = (sel, list, val, label) => {
+    sel.setAttribute('aria-label', label);
+    sel.innerHTML = list.map(([v, t]) => `<option value="${v}"${String(v) === String(val) ? ' selected' : ''}>${t}</option>`).join('');
+  };
+  if (m.kind === 'video') {
+    opts(selA, CONFIG.pricing.video.durations.map(d => [d, `${d}${NBSP}с`]), ui.params.dur, 'Длительность');
+    opts(selB, Object.keys(CONFIG.pricing.video.resolutions).map(r => [r, r]), ui.params.res, 'Разрешение');
+  } else {
+    opts(selA, CONFIG.pricing.image.formats.map(f => [f, f]), ui.params.fmt, 'Формат');
+    opts(selB, Object.keys(CONFIG.pricing.image.resolutions).map(r => [r, r]), ui.params.res, 'Разрешение');
+  }
+  selModel.value = ui.model;
+  $('barKind').textContent = m.kind === 'video' ? 'Текст → видео' : 'Текст → изображение';
+}
+function normParams(modelId, p){
+  const m = MODEL[modelId];
+  if (m.kind === 'video') return { dur: CONFIG.pricing.video.durations.includes(+p.dur) ? +p.dur : 5, res: CONFIG.pricing.video.resolutions[p.res] ? p.res : '1080p', fmt: p.fmt || '16:9' };
+  return { dur: p.dur || 5, res: CONFIG.pricing.image.resolutions[p.res] ? p.res : '2K', fmt: CONFIG.pricing.image.formats.includes(p.fmt) ? p.fmt : '16:9' };
+}
+const price = { from: 0, to: 0, t0: -10, dur: 0.55, shown: null, visible: false };
+function setUiState(modelId, params, T, animate = true){
+  const p = normParams(modelId, params);
+  const changed = modelId !== ui.model || JSON.stringify(p) !== JSON.stringify(ui.params);
+  ui.model = modelId; ui.params = p;
+  if (changed || !selA.options.length) fillParamSelects();
+  const c = costOf(modelId, p);
+  if (c !== price.to) { price.from = animate ? priceNow(T) : c; price.to = c; price.t0 = T; }
+}
+const priceNow = T => lerp(price.from, price.to, easeOutExpo(seg(T, price.t0, price.t0 + price.dur)));
+function renderPrice(T){
+  const v = Math.round(priceNow(T) * 100) / 100;
+  const txt = price.visible ? fmtRub(v) : '—';
+  if (txt !== price.shown) { goPrice.textContent = txt; price.shown = txt; }
+  const m = MODEL[ui.model];
+  const q = `${m.name} · ${paramsText(ui.model, ui.params)} — `;
+  const qs = q + (price.visible ? fmtRub(price.to) : '');
+  if (quoteL.dataset.v !== qs) { quoteL.dataset.v = qs; quoteL.innerHTML = `${q}<b>${price.visible ? fmtRub(price.to) : ''}</b>`; }
+}
+const markTouched = () => { if (!ui.userTouched) { ui.userTouched = true; price.visible = true; $('quote').setAttribute('aria-live', 'polite'); } };
+selModel.addEventListener('change', () => { markTouched(); setUiState(selModel.value, ui.params, clock.T); });
+selA.addEventListener('change', () => { markTouched(); const k = MODEL[ui.model].kind === 'video' ? 'dur' : 'fmt'; setUiState(ui.model, { ...ui.params, [k]: k === 'dur' ? +selA.value : selA.value }, clock.T); });
+selB.addEventListener('change', () => { markTouched(); setUiState(ui.model, { ...ui.params, res: selB.value }, clock.T); });
+promptEl.addEventListener('focus', () => { if (!ui.userTouched) { markTouched(); promptEl.select(); } });
+promptEl.addEventListener('input', markTouched);
+promptEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('bar').requestSubmit(); } });
+$('bar').addEventListener('submit', e => { e.preventDefault(); markTouched(); userGenerate(); });
+
+const userPick = {};
+function userGenerate(){
+  const T = clock.T;
+  ensureSchedule(T);
+  const last = events[events.length - 1];
+  const t0 = Math.max(T, last ? last.tFlash + 2.8 : T);
+  // предыдущий новорождённый уступает место героя
+  const tcNew = t0 + 0.85 - 0.6;
+  if (last) for (const it of last.items) if (it.pose !== 'orbit' && it.tSettle0 > tcNew - 0.3) { it.tSettle0 = Math.max(T, tcNew - 0.3); it.tOrbit = it.tSettle0 + it.settleDur; }
+  cfgVersion++;
+  const onScreen = new Set(); for (let s = 0; s < N_SLOTS; s++) { const it = itemAt(s, T); if (it) onScreen.add(it.asset); }
+  let pool = ASSETS.filter(a => a.model === ui.model);
+  const fresh = pool.filter(a => !onScreen.has(a.id));
+  if (fresh.length) pool = fresh;
+  const n = (userPick[ui.model] = (userPick[ui.model] || 0) + 1);
+  const asset = pool[n % pool.length];
+  const text = promptEl.value.trim() || asset.prompt;
+  addEvent('user', t0, [{ asset: asset.id, params: { ...ui.params }, pose: events.length % 2 ? 'heroR' : 'heroL' }],
+    { prompt: text, itemPrompt: text, model: ui.model, params: { ...ui.params } });
+  nextAutoT = Math.max(nextAutoT, t0 + AUTO_PERIOD);
+  if (clock.frozen) syncVideos(T);
+}
+
+/* ---------- терминал: тот же запрос через API, меняется только model ---------- */
+const termPre = $('termPre');
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const term = { model: null, id: null, prompt: null };
+const termCost = id => costOf(id, MODEL[id].kind === 'video' ? { dur: 10, res: '1080p' } : { res: '2K' });
+function buildTerm(promptText){
+  const pr = promptText.length > 30 ? promptText.slice(0, 30).trimEnd() + '…' : promptText;
+  term.prompt = promptText;
+  termPre.innerHTML =
+`<span class="t-cmd">curl</span> <span class="t-url">https://${esc(CONFIG.apiHost)}/v1/generations</span> \\
+  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $SINTEZ_KEY"</span> \\
+  <span class="t-flag">-d</span> <span class="t-str">'{"<span class="t-key">model</span>":"</span><span class="t-model" id="tModel"><span>seedance-2.5</span></span><span class="t-str">",</span>
+       <span class="t-str">"<span class="t-key">prompt</span>":"${esc(pr)}",</span>
+       <span class="t-str">"<span class="t-key">duration</span>":</span><span class="t-num">10</span><span class="t-str">,"<span class="t-key">resolution</span>":"1080p"}'</span>
+<span class="t-com t-resp" id="tResp"># → {"id":"<span id="tId">gen_0427</span>","status":"queued","cost_rub":<span class="t-cost" id="tCost">150.00</span>}</span>`;
+  term.model = null; term.id = null;
+}
+function termText(){
+  return `curl https://${CONFIG.apiHost}/v1/generations \\\n  -H "Authorization: Bearer $SINTEZ_KEY" \\\n  -d '{"model":"${term.model}","prompt":${JSON.stringify(term.prompt)},"duration":10,"resolution":"1080p"}'`;
+}
+function renderTerm(T, animate){
+  const ev = eventAt(T);
+  const ptxt = (ui.userTouched && promptEl.value.trim()) || (ev ? ev.prompt : ASSET['vid-moscow-night'].prompt);
+  if (ptxt !== term.prompt) buildTerm(ptxt);
+  const id = CONFIG.models[Math.floor(Math.max(0, T) / 2.4) % 4].id;
+  if (id !== term.model) {
+    term.model = id;
+    const box = $('tModel'), next = document.createElement('span'); next.textContent = id;
+    const old = box.firstElementChild;
+    box.appendChild(next);
+    const cost = $('tCost');
+    if (animate && old) {
+      gsap.set(box, { width: Math.max(old.offsetWidth, next.offsetWidth) });
+      gsap.fromTo(next, { yPercent: 0 }, { yPercent: -100, duration: 0.5, ease: 'expo.inOut' });
+      gsap.fromTo(old, { yPercent: 0 }, { yPercent: -100, duration: 0.5, ease: 'expo.inOut', onComplete: () => { old.remove(); gsap.set(next, { yPercent: 0 }); gsap.to(box, { width: next.offsetWidth, duration: 0.35, ease: 'expo.out' }); } });
+      gsap.fromTo(cost, { opacity: 0.25 }, { opacity: 1, duration: 0.6, ease: 'power2.out', onStart: () => { cost.textContent = termCost(id).toFixed(2); } });
+    } else { if (old) old.remove(); gsap.set(box, { width: 'auto' }); cost.textContent = termCost(id).toFixed(2); }
+  }
+  // на вспышке — JSON-ответ с новым id
+  let flashed = null; for (const e of events) if (e.tFlash <= T) flashed = e;
+  const gid = `gen_${String(427 + (flashed ? flashed.idx : 0)).padStart(4, '0')}`;
+  if (gid !== term.id) {
+    term.id = gid; $('tId').textContent = gid;
+    if (animate) gsap.fromTo('#tResp', { opacity: 0, x: -6 }, { opacity: 1, x: 0, duration: 0.6, ease: 'expo.out' });
+  }
+}
+$('copy').addEventListener('click', async () => {
+  const b = $('copy'), txt = termText();
+  try { await navigator.clipboard.writeText(txt); }
+  catch { const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch {} ta.remove(); }
+  b.textContent = 'Скопировано'; setTimeout(() => { b.textContent = 'Копировать'; }, 1600);
+});
+
+function setMode(dev, animate = true){
+  ui.dev = dev;
+  $('modeProd').setAttribute('aria-pressed', String(!dev));
+  $('modeDev').setAttribute('aria-pressed', String(dev));
+  $('modeHint').textContent = dev ? 'Модель меняется одной строкой' : '';
+  const bar = $('bar'), termF = $('term');
+  const hFrom = panel.offsetHeight;
+  panel.dataset.mode = dev ? 'dev' : 'prod';
+  if (dev) renderTerm(clock.T, false);
+  const hTo = dev ? Math.max(bar.offsetHeight, termF.querySelector('.term-top').offsetHeight + 12 + termPre.offsetHeight + 30) : bar.offsetHeight;
+  if (animate && !REDUCED) gsap.fromTo(panel, { height: hFrom }, { height: hTo, duration: 0.75, ease: 'expo.inOut', onComplete: () => { if (!dev) panel.style.height = ''; } });
+  else panel.style.height = dev ? `${hTo}px` : '';
+  $('quote').style.visibility = dev ? 'hidden' : '';
+  updateLabelTexts();
+}
+$('modeProd').addEventListener('click', () => setMode(false));
+$('modeDev').addEventListener('click', () => setMode(true));
+
+/* ---------- 3D-подписи (DOM поверх canvas, проекция из 3D-якорей каждый кадр) ---------- */
+const labelsEl = $('labels');
+for (const o of ORBITS) {
+  const el = document.createElement('div');
+  el.className = 'olabel'; el.dataset.kind = o.kind;
+  el.innerHTML = `<i></i><span class="nm"></span><span class="kd"> · <span class="kind"></span></span> · <span class="pr"></span>`;
+  el.addEventListener('pointerenter', () => { hoverOrbitLabel = o; });
+  el.addEventListener('pointerleave', () => { if (hoverOrbitLabel === o) hoverOrbitLabel = null; });
+  labelsEl.appendChild(el);
+  o.label = el; o.labelTh = 0;
+}
+let hoverOrbitLabel = null;
+for (const f of frames) {
+  const el = document.createElement('div');
+  el.className = 'fcap';
+  labelsEl.appendChild(el);
+  f.cap = el;
+}
+function updateLabelTexts(){
+  for (const o of ORBITS) {
+    const m = MODEL[o.model];
+    const nm = o.label.querySelector('.nm');
+    nm.textContent = ui.dev ? m.id : m.name;
+    nm.style.textTransform = ui.dev ? 'none' : '';
+    o.label.querySelector('.kind').textContent = m.kind === 'video' ? 'видео' : 'изображения';
+    o.label.querySelector('.pr').textContent = `от ${m.priceRub}${NBSP}${unitShort(m)}`;
+  }
+  for (const f of frames) f.capKey = null;
+}
+updateLabelTexts();
+let labelRef = { v: -1, t: -1 };
+function placeOrbitLabels(){
+  labelRef = { v: layoutVersion, t: 0 };
+  const placed = [];
+  const C = L.R.console;
+  for (const o of [...ORBITS].sort((a, b) => b.R - a.R)) {
+    const w = o.label.offsetWidth || 260, h = 22;
+    let best = Infinity, bestFeas = false;
+    for (let j = 0; j < 360; j++) {
+      const th = (j / 360) * Math.PI * 2;
+      const sc = toScreen(orbitPoint(o, th, _v.clone()), layoutCam);
+      for (const side of [-1, 1]) for (const vs of [-1, 1]) for (const dpx of [0, 14, 28]) {
+        const y0 = (vs < 0 ? sc.y - h - 4 : sc.y + 2) + vs * dpx;
+        const r = side > 0 ? { x0: sc.x + 10, y0, x1: sc.x + 10 + w, y1: y0 + h } : { x0: sc.x - 10 - w, y0, x1: sc.x - 10, y1: y0 + h };
+        const A = w * h;
+        // подписи орбит — неподвижные выноски у выхода орбит из сингулярности; кадры потом обходят их
+        let feas = r.x0 >= MARGIN && r.x1 <= W - MARGIN && r.y0 >= MARGIN && r.y1 <= H - MARGIN;
+        let c = 0;
+        for (const t of L.text) { const q = interR(r, t); c += 60 * q / A; if (q > 0) feas = false; }
+        for (const z of L.heroZones) { const q = interR(r, z); c += 20 * q / A; if (q > 0 && !MOBILE) feas = false; }
+        for (const p of placed) { const q = interR(padR(r, 8), p); c += 40 * q / A; if (q > 0) feas = false; }
+        c += 30 * (1 - interR(r, { x0: MARGIN, y0: 0, x1: W - MARGIN, y1: H }) / A);
+        const dx = Math.max(C.x0 - r.x1, r.x0 - C.x1, 0), dy = Math.max(C.y0 - r.y1, r.y0 - C.y1, 0);
+        c += 0.012 * Math.hypot(dx, dy) + dpx * 0.02 + (r.y1 > L.R.h1.y0 ? 1 : 0);
+        if (MOBILE) feas = true;
+        if ((feas && !bestFeas) || (feas === bestFeas && c < best)) { best = c; bestFeas = feas; o.labelTh = th; o.labelSide = side; o.labelV = vs; o.labelDY = vs * dpx; o.labelRect = r; }
+      }
+    }
+    o.labelW = w; o.labelOff = false; o.labelBest = best;
+    placed.push(o.labelRect);
+  }
+}
+
+/* ---------- наведение: орбиты (экранное расстояние до эллипса) и кадры (Raycaster) ---------- */
+const mouse = { x: 0, y: 0, nx: 0, ny: 0, k: 0, inside: false, overScene: false };
+const raycaster = new THREE.Raycaster();
+let hoverOrbit = null, hoverFrame = null;
+window.addEventListener('pointermove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true;
+  mouse.nx = e.clientX / W * 2 - 1; mouse.ny = -(e.clientY / H * 2 - 1);
+  mouse.overScene = e.target === canvas || e.target === document.body || e.target.classList.contains('hero') || !!e.target.closest('.olabel');
+  mouse.k = 1;
+}, { passive: true });
+document.addEventListener('pointerleave', () => { mouse.inside = false; mouse.overScene = false; });
+function pickHover(){
+  hoverFrame = null; hoverOrbit = hoverOrbitLabel;
+  if (!mouse.inside || !mouse.overScene) return;
+  raycaster.setFromCamera(new THREE.Vector2(mouse.nx, mouse.ny), camera);
+  const hits = raycaster.intersectObjects(frames.filter(f => f.mesh.visible && f.mat.uniforms.uReveal.value > 0.6).map(f => f.mesh), false);
+  if (hits.length) { hoverFrame = frames.find(f => f.mesh === hits[0].object); return; }
+  if (hoverOrbit) return;
+  let bestD = 14, best = null;
+  for (const o of ORBITS) for (let j = 0; j < 120; j++) {
+    const sc = toScreen(orbitPoint(o, (j / 120) * Math.PI * 2, _v.clone()));
+    const d = Math.hypot(sc.x - mouse.x, sc.y - mouse.y);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  hoverOrbit = best;
+}
+
+/* ==========================================================================
+   8. Хореография: DOM-таймлайн GSAP + uniform-ы, выведенные из T
+   ========================================================================== */
+const clock = { T: 0, frozen: false, running: false, last: 0 };
+const T_REDUCED = 13.5;       // статичная собранная композиция: кадры на орбитах, без вспышек
+let master = null, split = null;
+const easeInOutExpo = t => { t = clamp(t); return t === 0 ? 0 : t === 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2; };
+
+function buildMaster(){
+  gsap.registerPlugin(SplitText);
+  master = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
+  // 0.0–0.4 с — прелоадер: точка и реальный прогресс; уходит, когда раскрывается галактика
+  master.fromTo('#pre', { opacity: 1 }, { opacity: 0, duration: 0.45, ease: 'power2.in' }, 1.05);
+  // 1.4–2.4 с — навигация и надзаголовок проявляются, пока прорисовываются орбиты
+  master.fromTo('#nav', { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 1.1 }, 1.45);
+  master.fromTo('#overline', { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 1.1 }, 1.6);
+  // 1.75–2.5 с — сингулярность раскрывается в строку генерации: сначала линия, затем панель
+  master.fromTo('#panel', { clipPath: 'inset(49.6% 50% 49.6% 50%)' }, { clipPath: 'inset(49.6% 0% 49.6% 0%)', duration: 0.38, ease: 'expo.inOut' }, 1.75);
+  master.to('#panel', { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.5 }, 2.08);
+  master.fromTo(['#mode', '#modeHint'], { opacity: 0 }, { opacity: 1, duration: 0.7, stagger: 0.1 }, 2.3);
+  // 3.0 с — цена до запуска
+  master.fromTo('#quote', { opacity: 0, y: -4 }, { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+  // 5.0–6.6 с — заголовок по строкам: маска + размытие → резкость, затем подзаголовок, CTA, доверие
+  split = SplitText.create('#h1 .ln', { type: 'lines', mask: 'lines', linesClass: 'h1-line' });
+  master.fromTo(split.lines, { yPercent: 108, opacity: 0, filter: 'blur(16px)' }, { yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: 1.3, stagger: 0.18 }, 4.85);
+  master.fromTo('#sub', { opacity: 0, y: 14, filter: 'blur(8px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.0 }, 5.3);
+  master.fromTo('#ctas > *', { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.9, stagger: 0.08 }, 5.45);
+  master.fromTo('#micro', { opacity: 0 }, { opacity: 1, duration: 0.8 }, 5.6);
+  master.fromTo('#trust', { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.9 }, 5.5);
+  master.set({}, {}, 7.2);
+}
+
+const slotState = new Array(N_SLOTS).fill(null);
+const poseTmp = { p: new THREE.Vector3(), a: new THREE.Vector3(), s: 1, k: 1, vis: 1, dy: 0 };
+const corner = new THREE.Vector3();
+const scr = {};
+const scrA = {}, scrB = {};
+let prevHoverFrame = null;
+
+function update(T, dt){
+  ensureSchedule(T);
+  const ev = eventAt(T);
+  const lerpK = k => 1 - Math.exp(-dt * k);
+
+  /* ---------- 0.0–2.0 с: пролёт камеры сквозь пыль, галактика разворачивается ---------- */
+  const unfold = easeOut3(seg(T, 0.35, 2.4));
+  const camZ = lerp(46, BASE_CAM_Z, easeInOutExpo(seg(T, 0.4, 2.0)));
+
+  /* ---------- глобальные фазы текущего рождения ---------- */
+  let collapse = 0, explode = 0, flash = 0, aberr = 0, shock = 0, dustPull = 0, evT = 0;
+  if (ev) {
+    evT = clamp(T - ev.t0, 0, 12);
+    if (ev.kind === 'intro') collapse = T < 3.5 ? 0.55 * smooth(seg(T, 2.0, 3.5)) : 0.55 + 0.45 * easeIn3(seg(T, 3.5, 3.9));
+    else if (ev.kind === 'auto') collapse = T < ev.tFlash - 0.4 ? 0.55 * smooth(seg(T, ev.t0 + 0.3, ev.tFlash - 0.4)) : 0.55 + 0.45 * easeIn3(seg(T, ev.tFlash - 0.4, ev.tFlash));
+    else collapse = easeIn3(seg(T, ev.t0, ev.tFlash));
+    const since = T - ev.tFlash;
+    explode = seg(T, ev.tFlash, ev.tFlash + 0.9);
+    if (since >= 0) {
+      flash = Math.exp(-since * 9) * (ev.kind === 'intro' ? 0.6 : 0.36);
+      aberr = Math.exp(-since * 9);
+      shock = seg(T, ev.tFlash, ev.tFlash + 1.7);
+      dustPull = 0.32 * Math.exp(-since * 2.2);
+    } else dustPull = 0.32 * collapse;
+  }
+  if (REDUCED) { flash = 0; aberr = 0; shock = 1; }
+
+  /* ---------- камера: параллакс от курсора + тряска 2–3 px только на вспышке ---------- */
+  mouse.k = Math.max(0, mouse.k - dt * 0.35);
+  const par = REDUCED ? 0 : 1;
+  camera.userData.px = lerp(camera.userData.px || 0, mouse.nx * 0.38 * par, lerpK(2.2));
+  camera.userData.py = lerp(camera.userData.py || 0, mouse.ny * 0.24 * par, lerpK(2.2));
+  const shakePx = aberr * 2.6, toW = 1 / pxPerUnit(0, camera);
+  camera.position.set(camera.userData.px + Math.sin(T * 91.7) * shakePx * toW, camera.userData.py + Math.cos(T * 77.3) * shakePx * toW, camZ);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+
+  /* ---------- частицы ---------- */
+  const U = pUniforms;
+  U.uTime.value = T; U.uEvT.value = evT; U.uUnfold.value = unfold;
+  U.uCollapse.value = collapse; U.uExplode.value = explode; U.uDustPull.value = dustPull; U.uShock.value = shock;
+  if (mouse.inside) U.uMouseW.value.copy(screenToWorld(mouse.x, mouse.y, 0, camera));
+  U.uMouseK.value = REDUCED ? 0 : smooth(mouse.k);
+  const so = U.uSafeOn.value; so[0] = seg(T, 4.85, 5.8); so[1] = seg(T, 1.9, 2.5); so[2] = seg(T, 5.3, 6.1); so[3] = seg(T, 5.5, 6.2);
+
+  /* ---------- ядро и ударная волна ---------- */
+  const dot = T < 0.4 ? 1.0 + 0.25 * Math.sin(T * 18) : 1;
+  coreMat.uniforms.uI.value = (0.5 + 0.5 * unfold) * dot + 1.8 * collapse * collapse;
+  coreMat.uniforms.uHot.value = collapse;
+  coreMat.uniforms.uFl.value = flash * 2.2;
+  ring.visible = shock > 0 && shock < 1;
+  ringMat.uniforms.uR.value = easeOut3(shock) * 11;
+  ringMat.uniforms.uA.value = Math.pow(1 - shock, 3) * 0.55;
+
+  /* ---------- орбиты: прорисовка 0.85–2.4 с, подсветка, импульс ---------- */
+  // подписи орбит пересчитываются, когда новый кадр оседает на орбиту (детерминированно от T)
+
+  ORBITS.forEach((o, i) => {
+    const u = o.mat.uniforms;
+    u.uDraw.value = easeInOut3(seg(T, 0.85 + i * 0.12, 2.15 + i * 0.12));
+    const hi = hoverOrbit === o ? 1 : 0;
+    o.hi = lerp(o.hi, hi, lerpK(6));
+    u.uHi.value = o.hi;
+    u.uDim.value = hoverOrbit && hoverOrbit !== o ? 0.45 : 1;
+    u.uCamZ.value = camZ;
+    // импульс: по наведению — бежит по кругу; на вспышке — по орбите модели, которая рождает кадр
+    let pa = 0, pu = 0;
+    if (ev && ev.model === o.model && T >= ev.tFlash) { const k = seg(T, ev.tFlash, ev.tFlash + 1.8); pa = (1 - k) * 1.0; pu = (o.labelTh / (Math.PI * 2)) + k; }
+    if (o.hi > 0.05) { pa = Math.max(pa, o.hi); pu = (performance.now() / 1000) * 0.32 + o.i * 0.25; }
+    u.uPulseA.value = REDUCED ? 0 : pa; u.uPulse.value = ((pu % 1) + 1) % 1;
+    // подпись орбиты: проекция 3D-якоря
+    const sc = toScreen(orbitPoint(o, o.labelTh, _v.clone()), camera, scr);
+    const a = seg(T, 1.55 + i * 0.1, 2.25 + i * 0.1);
+    if (MOBILE && L_legend) {
+      // мобильная мизансцена: легенда орбит 2×2 у верхнего края сцены (сплошная — видео, пунктир — изображения)
+      const order = ['seedance-2.5', 'seedream-5.0', 'kling-3.0', 'kling-image-3.0'].indexOf(o.model); // слева видео, справа изображения
+      const col = order % 2, row = Math.floor(order / 2);
+      o.label.style.transform = `translate3d(${(col ? W - L.gut - o.labelW : L.gut).toFixed(1)}px, ${(L_legend.y0 - 2 + row * 18).toFixed(1)}px, 0)`;
+    } else {
+      const lx = o.labelSide < 0 ? sc.x - 10 - o.labelW : sc.x + 10;
+      o.label.style.transform = `translate3d(${lx.toFixed(1)}px, ${((o.labelV > 0 ? sc.y - 4 : sc.y - 26) + (o.labelDY || 0)).toFixed(1)}px, 0)`;
+    }
+    o.label.classList.toggle('flip', o.labelSide < 0);
+    o.label.style.opacity = (o.labelOff && !MOBILE ? 0 : a * (hoverOrbit && hoverOrbit !== o ? 0.4 : 1)).toFixed(3);
+    o.label.classList.toggle('hi', hoverOrbit === o);
+  });
+
+  /* ---------- кадры: позы, проявление, подписи; частицы целятся в матрицу кадра ---------- */
+  for (let s = 0; s < N_SLOTS; s++) {
+    const f = frames[s];
+    const cur = itemAt(s, T);
+    if (cur) {
+      const st = slotState[s];
+      if (!st || st.asset !== cur.asset || (!st.real && media[cur.asset] && media[cur.asset].posterImg)) slotState[s] = writeSlot(s, cur.asset);
+    }
+    U.uActive.value[s] = cur ? (cur.ev.kind === 'intro' ? 1 : smooth(seg(T, cur.ev.t0, cur.ev.t0 + 0.8))) : 0;
+    U.uForm.value[s] = cur ? seg(T, cur.tForm0, cur.tForm0 + cur.formDur) : 0;
+    U.uReveal.value[s] = cur ? seg(T, cur.tRev0, cur.tRev0 + cur.revDur) : 0;
+    let disp = null, reveal = 0;
+    if (cur) {
+      if (T < cur.ev.tFlash && cur.prev) { disp = cur.prev; reveal = 1 - smooth(seg(T, cur.ev.t0, cur.ev.t0 + 1.1)); }
+      else { disp = cur; reveal = seg(T, cur.tRev0, cur.tRev0 + cur.revDur); }
+    }
+    f.item = disp;
+    const mesh = f.mesh, mu = f.mat.uniforms;
+    if (!disp) { mesh.visible = false; f.rect = null; f.cap.style.opacity = '0'; setTether(s, _v, _v, 0); continue; }
+    setFrameAsset(f, disp.asset);
+    const tex = bestTexture(disp.asset);
+    if (tex !== mu.uTex.value) { mu.uTex.value = tex; mu.uHasTex.value = tex ? 1 : 0; }
+    const pose = poseAt(disp, T, poseTmp);
+    const onOrbit = disp.pose === 'orbit' || pose.k >= 1;
+    f.hover = lerp(f.hover, hoverFrame === f ? 1 : 0, lerpK(7));
+    f.fwd = lerp(f.fwd, hoverOrbit && hoverOrbit === disp.orbit && onOrbit ? 1 : 0, lerpK(5));
+    const asp = assetAspect(ASSET[disp.asset]);
+    const vis = pose.vis; // 0 — решатель не нашёл места: кадр уходит в глубину и гаснет
+    const sc = pose.s * (1 + 0.1 * f.hover + 0.08 * f.fwd);
+    mesh.position.copy(pose.p);
+    mesh.position.z += 0.8 * f.hover + 1.0 * f.fwd - 2.5 * (1 - vis);
+    mesh.quaternion.copy(camera.quaternion);
+    mesh.rotateY(clamp(-pose.p.x * 0.022, -0.16, 0.16) * (1 - f.hover));
+    mesh.scale.set(sc * Math.sqrt(asp), sc / Math.sqrt(asp), 1);
+    mesh.renderOrder = 100 + Math.round((mesh.position.z + f.hover * 3) * 10);
+    mesh.updateMatrixWorld();
+    if (disp === cur) { U.uFMat.value[s].copy(mesh.matrixWorld); U.uActive.value[s] *= vis; }
+    // экранный прямоугольник кадра → безопасные зоны текста
+    corner.set(-0.5, -0.5, 0).applyMatrix4(mesh.matrixWorld); toScreen(corner, camera, scrA);
+    corner.set(0.5, 0.5, 0).applyMatrix4(mesh.matrixWorld); toScreen(corner, camera, scrB);
+    const fr = { x0: Math.min(scrA.x, scrB.x), y0: Math.min(scrA.y, scrB.y), x1: Math.max(scrA.x, scrB.x), y1: Math.max(scrA.y, scrB.y) };
+    f.rect = fr;
+    let over = 0; const A = areaR(fr) || 1;
+    for (let k = 0; k < 3; k++) over += interR(fr, L.text[k]) / A;
+    over = clamp(over * 1.6);
+    const orbDim = hoverOrbit && hoverOrbit !== disp.orbit ? 0.55 : 0;
+
+    f.dim = clock.frozen ? Math.max(over * 0.75, orbDim) : lerp(f.dim, Math.max(over * 0.75, orbDim), lerpK(6));
+    mu.uDim.value = f.dim * (1 - f.hover);
+    mu.uOpacity.value = (1 - over * 0.55 * (1 - f.hover)) * vis;
+    mu.uReveal.value = reveal;
+    mu.uBend.value = f.hover;
+    mu.uTime.value = T;
+    mesh.visible = reveal > 0.001 || (disp === cur && U.uForm.value[s] > 0);
+    // подвес: от узла на орбите к ближайшей кромке кадра
+    {
+      let tA = mesh.visible && Math.abs(pose.dy) > 0.04 ? 0.3 * smooth(seg(reveal, 0.5, 1)) * vis * (1 - f.dim * 0.7) * clamp(Math.abs(pose.dy) / 0.3) : 0;
+      const edge = corner.copy(pose.p);
+      if (MOBILE) edge.x -= Math.sign(pose.dy) * sc * Math.sqrt(asp) * 0.5;
+      else {
+        // кадр над орбитой: нить идёт к низу подписи, а не сквозь неё
+        const kpx = pxPerUnit(pose.p.z, camera), half = sc / Math.sqrt(asp) * 0.5;
+        const reach = pose.dy > 0 ? half + 27 / kpx : half;
+        edge.y -= Math.sign(pose.dy) * reach;
+        if (Math.abs(pose.dy) - reach < 6 / kpx) tA = 0;
+      }
+      setTether(s, pose.a, edge, tA);
+    }
+    // моно-подпись под кадром: KLING 3.0 · 5 С · 70 ₽
+    const m = MODEL[disp.model];
+    const big = !onOrbit;
+    const key = `${ui.dev}|${disp.num}|${big}`;
+    if (f.capKey !== key) {
+      f.capKey = key;
+      const pp = big ? paramsText(disp.model, disp.params) : (m.kind === 'video' ? `${disp.params.dur}${NBSP}с` : disp.params.res);
+      f.cap.innerHTML = `<span${ui.dev ? ' style="text-transform:none"' : ''}>${ui.dev ? m.id : m.name}</span> · ${pp} · <span class="pr">${fmtRub(disp.cost)}</span>`;
+      f.cap.classList.toggle('big', big);
+    }
+    const capW0 = f.cap.offsetWidth || (big ? 260 : 190);
+    const capY = fr.y1 + 9, capX = clamp(fr.x0, MARGIN, W - MARGIN - capW0);
+    const capR = { x0: capX, y0: capY, x1: capX + capW0, y1: capY + 12 };
+    let covered = 0; const fA = areaR(fr) || 1;
+    for (const g of frames) if (g !== f && g.mesh.visible && g.rect && g.mesh.renderOrder > mesh.renderOrder) covered += interR(fr, g.rect) / fA;
+    const onScreen = interR(fr, { x0: 0, y0: 0, x1: W, y1: H }) / fA;
+    let capOver = 0; for (const t of L.text) capOver += interR(capR, t);
+    for (const g of frames) if (g !== f && g.mesh.visible && g.rect && g.mat.uniforms.uReveal.value > 0.3) capOver += interR(capR, g.rect);
+    if (!MOBILE) for (const o of ORBITS) if (o.labelRect) capOver += interR(capR, padR(o.labelRect, 4));
+    const capA = smooth(seg(reveal, 0.55, 1)) * (capOver > 0 ? 0 : 1) * (1 - f.dim * 0.7) * (covered < 0.25 && onScreen > 0.85 ? 1 : 0) * smooth(seg(vis, 0.6, 1));
+    f.cap.style.transform = `translate3d(${capX.toFixed(1)}px, ${capY.toFixed(1)}px, 0)`;
+    f.cap.style.opacity = capA.toFixed(3);
+  }
+
+  tetherGeo.attributes.position.needsUpdate = true; tetherGeo.attributes.aA.needsUpdate = true;
+  nodeGeo.attributes.position.needsUpdate = true; nodeGeo.attributes.aA.needsUpdate = true;
+  nodeMat.uniforms.uPR.value = DPR;
+
+  /* ---------- плашка наведения на кадр ---------- */
+  const plate = $('plate');
+  if (hoverFrame && hoverFrame.item && hoverFrame.rect) {
+    const it = hoverFrame.item, m = MODEL[it.model];
+    if (plate.dataset.num !== String(it.num) || plate.dataset.dev !== String(ui.dev)) {
+      plate.dataset.num = String(it.num); plate.dataset.dev = String(ui.dev);
+      $('plateModel').textContent = `${ui.dev ? m.id : m.name} · ${m.kind === 'video' ? 'видео' : 'изображение'}`;
+      $('platePrice').textContent = fmtRub(it.cost);
+      $('plateParams').textContent = paramsText(it.model, it.params);
+      $('plateId').textContent = `№${NBSP}${String(it.num).padStart(4, '0')}`;
+      $('platePrompt').textContent = `«${it.prompt}»`;
+    }
+    const r = hoverFrame.rect;
+    const ph = plate.offsetHeight || 110, pw = 300;
+    const cands = [[r.x0, r.y1 + 28], [r.x0, r.y0 - ph - 12], [r.x1 + 14, r.y0], [r.x0 - pw - 14, r.y0]];
+    let px = 0, py = 0, bestC = Infinity;
+    for (const [cx, cy] of cands) {
+      const x = clamp(cx, 12, W - pw - 12), y = clamp(cy, 12, H - ph - 12);
+      const pr = { x0: x, y0: y, x1: x + pw, y1: y + ph };
+      let c = 0; for (const t of L.text) c += interR(pr, t); c += interR(pr, r) * 2;
+      if (c < bestC) { bestC = c; px = x; py = y; }
+    }
+    plate.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
+    plate.style.opacity = '1';
+  } else plate.style.opacity = '0';
+  if (hoverFrame !== prevHoverFrame) {
+    // наведение на кадр: видео идёт с начала
+    if (hoverFrame && hoverFrame.item && ASSET[hoverFrame.item.asset].kind === 'video' && !clock.frozen) {
+      const v = media[hoverFrame.item.asset].video; if (v) { v.currentTime = 0; v.play().catch(() => {}); }
+    }
+    prevHoverFrame = hoverFrame;
+  }
+
+  /* ---------- видео: играют только проявленные кадры ---------- */
+  if (!clock.frozen) manageVideos(T);
+
+  /* ---------- строка генерации: демо-печать, модель, цена до запуска ---------- */
+  if (ev && !ui.userTouched) {
+    const prevEv = events[ev.idx - 1];
+    const full = ev.prompt;
+    let text;
+    if (T < ev.tType0) text = prevEv ? prevEv.prompt : '';
+    else text = full.slice(0, Math.round(full.length * seg(T, ev.tType0, ev.tType1)));
+    if (promptEl.value !== text) promptEl.value = text;
+    const useEv = T >= ev.tPrice || !prevEv ? ev : prevEv;
+    if (ev.kind === 'intro') {
+      price.visible = T >= ev.tPrice;
+      setUiState(ev.model, ev.params, T, false);
+      price.from = 0; price.to = ev.cost; price.t0 = ev.tPrice; price.dur = 0.5;
+    } else {
+      price.visible = true;
+      if (ui.model !== useEv.model || JSON.stringify(normParams(useEv.model, useEv.params)) !== JSON.stringify(ui.params)) setUiState(useEv.model, useEv.params, T, false);
+      price.from = prevEv ? prevEv.cost : 0; price.to = useEv.cost; price.t0 = ev.tPrice; price.dur = 0.5;
+      if (T < ev.tPrice) { price.from = price.to; }
+    }
+  }
+  renderPrice(T);
+  goBtn.dataset.pressed = ev && T >= ev.tPress && T < ev.tPress + 0.16 ? '1' : '0';
+  panel.style.setProperty('--edge', (0.45 + 0.55 * clamp(collapse + flash)).toFixed(3));
+  if (ui.dev) renderTerm(T, !clock.frozen);
+
+  /* ---------- пост ---------- */
+  const fu = finalPass.uniforms;
+  fu.uTime.value = T; fu.uAberr.value = aberr; fu.uFlash.value = flash;
+  bloom.strength = 0.5 + flash * 0.45;
+
+  /* ---------- DOM-таймлайн ---------- */
+  if (master) { const mt = Math.min(T, master.duration()); if (Math.abs(master.time() - mt) > 1e-4) master.time(mt, false); }
+  const pct = loadState.total ? loadState.loaded / loadState.total : 0;
+  $('prePct').textContent = `${Math.round(pct * 100)}%`;
+  $('preLine').style.transform = `scaleX(${pct.toFixed(3)})`;
+}
+
+function wantedVideos(){
+  const want = {};
+  for (const f of frames) {
+    const it = f.item;
+    if (!it || !f.mesh.visible || ASSET[it.asset].kind !== 'video' || f.mat.uniforms.uReveal.value <= 0) continue;
+    want[it.asset] = it;
+  }
+  return want;
+}
+function manageVideos(T){
+  const want = wantedVideos();
+  for (const a of ASSETS) {
+    if (a.kind !== 'video') continue;
+    const v = media[a.id] && media[a.id].video; if (!v) continue;
+    const it = want[a.id];
+    if (it && !REDUCED) {
+      if (v._item !== it.num) { v._item = it.num; v.currentTime = clamp(T - it.tRev0, 0, (v.duration || 4.5) - 0.05); }
+      if (v.paused) v.play().catch(() => {});
+    } else if (!v.paused) v.pause();
+  }
+}
+/** Детерминированная перемотка видео: currentTime = (T − начало проявления) mod длительность */
+function syncVideos(T){
+  const want = wantedVideos(), waits = [];
+  for (const a of ASSETS) {
+    if (a.kind !== 'video') continue;
+    const v = media[a.id] && media[a.id].video; if (!v) continue;
+    v.pause();
+    const it = want[a.id], dur = v.duration || 4.5;
+    const t = it && !REDUCED ? ((((T - it.tRev0) % dur) + dur) % dur) : 0;
+    if (Math.abs(v.currentTime - t) > 0.01 || v.readyState < 2) {
+      waits.push(new Promise(ok => { v.addEventListener('seeked', ok, { once: true }); setTimeout(ok, 2000); }));
+      v.currentTime = Math.min(t, dur - 0.04);
+    }
+  }
+  return Promise.all(waits);
+}
+
+/* ---------- адаптивное качество: первые кадры → DPR и число частиц ---------- */
+const perf = { n: 0, acc: 0, stage: 0 };
+function perfSample(dt){
+  if (clock.frozen || perf.stage > 2) return;
+  perf.n++;
+  if (perf.n < 40) return;
+  perf.acc += dt;
+  if (perf.n < 100) return;
+  const avg = perf.acc / 60;
+  perf.n = 0; perf.acc = 0; perf.stage++;
+  if (avg > 0.022 && DPR > 1) { DPR = Math.max(1, DPR * 0.72); renderer.setPixelRatio(DPR); composer.setPixelRatio(DPR); computeLayout(); }
+  else if (avg > 0.022) pGeo.setDrawRange(0, N_SLOT * N_SLOTS + Math.floor(N_DUST * 0.55));
+  else perf.stage = 9;
+}
+
+/* ---------- цикл ---------- */
+function loop(now){
+  if (!clock.running) return;
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.1, Math.max(0, (now - clock.last) / 1000));
+  clock.last = now;
+  if (!clock.frozen) clock.T += dt;
+  pickHover();
+  update(clock.T, dt);
+  composer.render(dt);
+  perfSample(dt);
+}
+function start(){
+  if (clock.running) return;
+  clock.running = true; clock.last = performance.now();
+  requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clock.running = false;
+    for (const a of ASSETS) { const v = media[a.id] && media[a.id].video; if (v && !v.paused) v.pause(); }
+  } else start();
+});
+
+/** ?t=<сек> и window.__seek(sec): ставит GSAP, uniform-ы и currentTime видео на момент и замораживает время */
+window.__seek = async (sec) => {
+  window.__ready = false;
+  clock.frozen = true; clock.T = Math.max(0, +sec || 0);
+  update(clock.T, 0);
+  await syncVideos(clock.T);
+  for (const c of Object.values(texCache)) if (c.video) c.video.needsUpdate = true;
+  update(clock.T, 0);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  window.__ready = true;
+  return clock.T;
+};
+window.__play = () => { clock.frozen = false; };
+/** QA: экранные прямоугольники кадров, подписей и подписей орбит (только чтение) */
+window.__layout = () => ({
+  W, H, margin: MARGIN,
+  text: L.text.map(r => [r.x0, r.y0, r.x1, r.y1].map(Math.round)),
+  frames: frames.filter(f => f.mesh.visible && f.rect && f.mat.uniforms.uOpacity.value > 0.5 && f.mat.uniforms.uReveal.value > 0.5)
+    .map(f => ({ asset: f.item.asset, r: [f.rect.x0, f.rect.y0, f.rect.x1, f.rect.y1].map(Math.round), cap: +getComputedStyle(f.cap).opacity > 0.5 ? (b => [b.left, b.top, b.right, b.bottom].map(Math.round))(f.cap.getBoundingClientRect()) : null })),
+  labels: ORBITS.filter(o => +o.label.style.opacity > 0.5).map(o => (b => [b.left, b.top, b.right, b.bottom].map(Math.round))(o.label.getBoundingClientRect())),
+});
+
+async function fontsSettled(){
+  for (let i = 0; i < 6 && document.fonts.status === 'loading'; i++) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 500))]);
+}
+async function fontsReady(){
+  const specs = ['300 80px "Cormorant Garamond"', 'italic 300 80px "Cormorant Garamond"', '500 24px "Cormorant Garamond"', '400 16px "Inter Tight"', '500 16px "Inter Tight"', '600 16px "Inter Tight"', '400 12px "JetBrains Mono"', '500 12px "JetBrains Mono"'];
+  const sample = 'Вселенная кадров ёЁ';
+  await Promise.all(specs.map(s => document.fonts.load(s, sample + ' ₽ → № — «» · 0123456789').catch(() => [])));
+  const faces = [...document.fonts].filter(f => f.status === 'loaded');
+  const cyr = faces.filter(f => /U\+0?4[0-9A-F]{2}/i.test(f.unicodeRange)).map(f => `${f.family} ${f.style} ${f.weight}`);
+  const ok = specs.every(s => document.fonts.check(s, sample)) && ['Cormorant Garamond', 'Inter Tight', 'JetBrains Mono'].every(fam => cyr.some(c => c.startsWith(fam)));
+  window.__fonts = { ok, cyrillicFaces: cyr };
+  return ok;
+}
+
+async function init(){
+  addEvent('intro', 0, INTRO_ITEMS, { model: 'seedance-2.5', params: { dur: 10, res: '1080p' }, prompt: ASSET['vid-moscow-night'].prompt });
+  setUiState('seedance-2.5', { dur: 10, res: '1080p' }, 0, false);
+  fillParamSelects();
+  const loading = loadAll();
+  await Promise.race([fontsReady().then(fontsSettled), new Promise(r => setTimeout(r, 2500))]);
+  computeLayout();
+  await fontsSettled();
+  buildMaster();
+  if (START_DEV) setMode(true, false);
+  $('pre').classList.add('gl');
+  let resizeT = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => { if (isMobile() !== MOBILE) location.reload(); else computeLayout(); }, 120);
+  });
+  RM_QUERY.addEventListener('change', () => location.reload());
+  if (SEEK_T !== null) {
+    await loading; await fontsReady();
+    computeLayout();
+    start();
+    await window.__seek(SEEK_T);
+  } else if (REDUCED) {
+    clock.frozen = true; clock.T = T_REDUCED;
+    start();
+    loading.then(() => window.__seek(T_REDUCED));
+  } else start();
+}
+init();
+</script>
+</body>
+</html>
